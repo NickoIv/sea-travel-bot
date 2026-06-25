@@ -4,6 +4,8 @@ import logging
 import os
 import json
 import hashlib
+import urllib.request
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -40,6 +42,38 @@ SEA_KEYWORDS = [
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
 log = logging.getLogger(__name__)
 
+
+# ─── Перевод через бесплатный Google Translate ───────────────────────────────
+
+def translate_to_russian(text: str) -> str:
+    """Переводит текст на русский через бесплатный Google Translate API."""
+    if not text or not text.strip():
+        return text
+    try:
+        text = text[:500]
+        params = urllib.parse.urlencode({
+            "client": "gtx",
+            "sl": "auto",
+            "tl": "ru",
+            "dt": "t",
+            "q": text,
+        })
+        url = f"https://translate.googleapis.com/translate_a/single?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        result = ""
+        for block in data[0]:
+            if block[0]:
+                result += block[0]
+        return result.strip() if result.strip() else text
+    except Exception as e:
+        log.warning(f"Перевод не удался: {e}")
+        return text
+
+
+# ─── Хранилище данных ────────────────────────────────────────────────────────
+
 def load_data():
     if DATA_FILE.exists():
         with open(DATA_FILE, encoding="utf-8") as f:
@@ -74,6 +108,9 @@ def mark_sent(h):
 def is_sent(h):
     return h in load_data()["sent_hashes"]
 
+
+# ─── Парсинг RSS ─────────────────────────────────────────────────────────────
+
 def news_hash(entry):
     return hashlib.md5((entry.get("link","") + entry.get("title","")).encode()).hexdigest()
 
@@ -97,11 +134,16 @@ def fetch_news(limit=MAX_NEWS):
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
                     dt = datetime(*entry.published_parsed[:6])
                     published = dt.strftime("%d %b %Y")
+
+                title_ru = translate_to_russian(entry.get("title", ""))
+                summary_raw = entry.get("summary", "")[:400]
+                summary_ru = translate_to_russian(summary_raw) if summary_raw else ""
+
                 results.append({
                     "hash": h,
-                    "title": entry.get("title", "No title")[:100],
+                    "title": title_ru or entry.get("title", "Без заголовка"),
                     "link": entry.get("link", ""),
-                    "summary": entry.get("summary", "")[:300],
+                    "summary": summary_ru,
                     "source": feed_cfg["name"],
                     "flag": feed_cfg["flag"],
                     "published": published,
@@ -111,13 +153,16 @@ def fetch_news(limit=MAX_NEWS):
             log.warning(f"Feed error {feed_cfg['name']}: {e}")
     return results[:limit]
 
+
+# ─── Форматирование ──────────────────────────────────────────────────────────
+
 def fmt_item(item, i):
-    summary = item["summary"].replace("<","&lt;").replace(">","&gt;")
+    summary = item["summary"].replace("<","&lt;").replace(">","&gt;") if item["summary"] else ""
     if summary:
         dot = summary.find(". ")
         if dot > 40:
             summary = summary[:dot+1]
-        summary = f"\n<i>{summary[:180]}</i>"
+        summary = f"\n<i>{summary[:200]}</i>"
     date = f"  •  {item['published']}" if item["published"] else ""
     return (
         f"{item['flag']} <b>{i}. {item['title']}</b>\n"
@@ -134,6 +179,9 @@ def fmt_digest(news_list):
     items = "\n\n".join(fmt_item(n, i+1) for i, n in enumerate(news_list))
     return header + items + "\n\n<i>Подписан на ежедневный дайджест ✅</i>"
 
+
+# ─── Команды ─────────────────────────────────────────────────────────────────
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name or "Путешественник"
     kb = [
@@ -147,6 +195,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "Я слежу за новостями туризма по <b>Юго-Восточной Азии</b> — "
         "Таиланд, Бали, Вьетнам, Камбоджа, Малайзия, Сингапур и другие страны.\n\n"
         "🗓 Дайджест каждое утро в <b>10:00 по Алматы</b>\n"
+        "🇷🇺 Все новости переводятся на русский язык\n"
         "✈️ Слежу за безвизом, рейсами, курортами, ценами\n\n"
         "Выбери действие:",
         parse_mode="HTML",
@@ -154,7 +203,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_news(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text("⏳ Собираю свежие новости...")
+    msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
     news = fetch_news()
     for n in news: mark_sent(n["hash"])
     await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
@@ -175,7 +224,7 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     status = "✅ Подписан" if is_subscribed(update.effective_user.id) else "🔕 Не подписан"
     await update.message.reply_text(
         f"📊 <b>Статус</b>\n\nТвой статус: {status}\nПодписчиков всего: {len(data['subscribers'])}\n"
-        f"Источников RSS: {len(RSS_FEEDS)}\nРассылка: 10:00 Алматы",
+        f"Источников RSS: {len(RSS_FEEDS)}\nРассылка: 10:00 Алматы\n🇷🇺 Перевод: включён",
         parse_mode="HTML"
     )
 
@@ -186,13 +235,16 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
+
+# ─── Callback кнопки ─────────────────────────────────────────────────────────
+
 async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     uid = q.from_user.id
 
     if q.data == "get_news":
-        await q.edit_message_text("⏳ Собираю новости...")
+        await q.edit_message_text("⏳ Собираю и перевожу новости на русский...")
         news = fetch_news()
         for n in news: mark_sent(n["hash"])
         kb = [[InlineKeyboardButton("🔔 Подписаться на дайджест", callback_data="subscribe")]]
@@ -210,7 +262,7 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             "🗺 <b>Страны ЮВА</b>\n\n🇹🇭 Таиланд — Пхукет, Краби, Самуи, Бангкок\n"
             "🇻🇳 Вьетнам — Ханой, Хошимин, Дананг\n🇮🇩 Индонезия — Бали, Ломбок, Комодо\n"
-            "🇰🇭 Камбоджа — Ангкор, Сиемреап\n🇲🇾 Малайзия — КЛ, Лангкави, Борнео\n"
+            "🇰🇭 Камбоджа — Ангкор, Сиемреап\n🇲🇾 Малайзия — КЛ, Лангкawi, Борнео\n"
             "🇸🇬 Сингапур\n🇵🇭 Филиппины — Боракай, Палаван\n🇲🇲 Мьянма\n🇱🇦 Лаос",
             parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -218,8 +270,11 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton("← Назад", callback_data="back")]]
         await q.edit_message_text(
             "🌴 <b>SEA Travel News Bot</b>\n\n"
-            "Собирает новости из 8 RSS-источников, фильтрует по ключевым словам, удаляет дубли.\n\n"
-            "📅 Дайджест ежедневно в 10:00 по Алматы\n🆓 Бесплатно и без рекламы",
+            "Собирает новости из 8 RSS-источников, автоматически переводит на русский язык, "
+            "фильтрует по ключевым словам, удаляет дубли.\n\n"
+            "📅 Дайджест ежедневно в 10:00 по Алматы\n"
+            "🇷🇺 Автоперевод на русский язык\n"
+            "🆓 Бесплатно и без рекламы",
             parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
     elif q.data == "back":
@@ -231,6 +286,9 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         await q.edit_message_text("🌏 Главное меню — SEA Travel News",
             reply_markup=InlineKeyboardMarkup(kb))
+
+
+# ─── Ежедневная рассылка ─────────────────────────────────────────────────────
 
 async def send_daily(app):
     data = load_data()
@@ -246,9 +304,12 @@ async def send_daily(app):
         except Exception as e:
             log.warning(f"Send error {uid}: {e}")
 
+
+# ─── Запуск ──────────────────────────────────────────────────────────────────
+
 def main():
     if not BOT_TOKEN:
-        print("❌ Укажи BOT_TOKEN в переменных окружения Railway!")
+        print("❌ Укажи BOT_TOKEN в переменных окружения!")
         return
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
@@ -262,7 +323,7 @@ def main():
     scheduler.add_job(lambda: asyncio.create_task(send_daily(app)),
         trigger="cron", hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC)
     scheduler.start()
-    log.info("🌴 SEA Travel News Bot запущен!")
+    log.info("🌴 SEA Travel News Bot запущен с переводом на русский!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
