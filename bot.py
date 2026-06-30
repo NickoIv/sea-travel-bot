@@ -21,22 +21,22 @@ SCHEDULE_MINUTE_UTC = 0
 MAX_NEWS = 8
 
 RSS_FEEDS = [
-    {"name": "The Thaiger", "url": "https://thethaiger.com/feed", "flag": "🇹🇭"},
-    {"name": "AsiaOne Travel", "url": "https://www.asiaone.com/rss/travel.xml", "flag": "✈️"},
-    {"name": "Khmer Times", "url": "https://www.khmertimeskh.com/category/tourism/feed", "flag": "🇰🇭"},
-    {"name": "Jakarta Post", "url": "https://www.thejakartapost.com/travel.rss", "flag": "🇮🇩"},
     {"name": "Vietnam Travel", "url": "https://vietnam.travel/feed", "flag": "🇻🇳"},
-    {"name": "Nation Thailand", "url": "https://www.nationthailand.com/rss/travel", "flag": "🌴"},
-    {"name": "Travel Wire Asia", "url": "https://www.travelwireasia.com/feed/", "flag": "🌏"},
+    {"name": "Vietnam Plus", "url": "https://en.vietnamplus.vn/rss/travel.rss", "flag": "🇻🇳"},
+    {"name": "Jakarta Post", "url": "https://www.thejakartapost.com/travel.rss", "flag": "🇮🇩"},
+    {"name": "Coconuts Bali", "url": "https://coconuts.co/bali/feed/", "flag": "🌴"},
+    {"name": "AsiaOne Travel", "url": "https://www.asiaone.com/rss/travel.xml", "flag": "✈️"},
     {"name": "TTR Weekly", "url": "https://www.ttrweekly.com/site/feed/", "flag": "📰"},
 ]
 
 SEA_KEYWORDS = [
-    "thailand","bali","vietnam","indonesia","cambodia","myanmar","laos",
-    "malaysia","singapore","philippines","southeast asia","phuket","krabi",
-    "samui","hanoi","ho chi minh","angkor","lombok","komodo","beach",
-    "resort","temple","diving","island","visa","flight","travel","tourism",
-    "hotel","tour","destination","asia","bangkok","chiang mai","koh","dao",
+    "vietnam","hanoi","ho chi minh","da nang","danang","hoi an","nha trang",
+    "halong","sapa","phu quoc","hue","saigon",
+    "indonesia","bali","jakarta","lombok","komodo","ubud","denpasar",
+    "seminyak","canggu","yogyakarta","surabaya","sumatra","java island",
+    "singapore","sentosa","changi",
+    "beach","resort","temple","diving","island","visa","flight","travel",
+    "tourism","hotel","tour","destination",
 ]
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
@@ -260,17 +260,17 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif q.data == "countries":
         kb = [[InlineKeyboardButton("← Назад", callback_data="back")]]
         await q.edit_message_text(
-            "🗺 <b>Страны ЮВА</b>\n\n🇹🇭 Таиланд — Пхукет, Краби, Самуи, Бангкок\n"
-            "🇻🇳 Вьетнам — Ханой, Хошимин, Дананг\n🇮🇩 Индонезия — Бали, Ломбок, Комодо\n"
-            "🇰🇭 Камбоджа — Ангкор, Сиемреап\n🇲🇾 Малайзия — КЛ, Лангкawi, Борнео\n"
-            "🇸🇬 Сингапур\n🇵🇭 Филиппины — Боракай, Палаван\n🇲🇲 Мьянма\n🇱🇦 Лаос",
+            "🗺 <b>Страны, за которыми слежу</b>\n\n"
+            "🇻🇳 Вьетнам — Ханой, Хошимин, Дананг, Хойан, Нячанг, Фукуок\n"
+            "🇮🇩 Индонезия — Бали, Ломбок, Комодо, Джакарта, Уджунг\n"
+            "🇸🇬 Сингапур — Сентоза, центр города",
             parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
     elif q.data == "about":
         kb = [[InlineKeyboardButton("← Назад", callback_data="back")]]
         await q.edit_message_text(
             "🌴 <b>SEA Travel News Bot</b>\n\n"
-            "Собирает новости из 8 RSS-источников, автоматически переводит на русский язык, "
+            "Собирает новости о Вьетнаме, Индонезии (Бали) и Сингапуре, автоматически переводит на русский язык, "
             "фильтрует по ключевым словам, удаляет дубли.\n\n"
             "📅 Дайджест ежедневно в 10:00 по Алматы\n"
             "🇷🇺 Автоперевод на русский язык\n"
