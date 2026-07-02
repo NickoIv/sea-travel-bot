@@ -9,7 +9,7 @@ import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
 )
@@ -43,13 +43,20 @@ logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=lo
 log = logging.getLogger(__name__)
 
 
+# ─── Перевод через бесплатный Google Translate ───────────────────────────────
+
 def translate_to_russian(text: str) -> str:
+    """Переводит текст на русский через бесплатный Google Translate API."""
     if not text or not text.strip():
         return text
     try:
         text = text[:500]
         params = urllib.parse.urlencode({
-            "client": "gtx", "sl": "auto", "tl": "ru", "dt": "t", "q": text,
+            "client": "gtx",
+            "sl": "auto",
+            "tl": "ru",
+            "dt": "t",
+            "q": text,
         })
         url = f"https://translate.googleapis.com/translate_a/single?{params}"
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
@@ -64,6 +71,8 @@ def translate_to_russian(text: str) -> str:
         log.warning(f"Перевод не удался: {e}")
         return text
 
+
+# ─── Хранилище данных ────────────────────────────────────────────────────────
 
 def load_data():
     if DATA_FILE.exists():
@@ -100,6 +109,8 @@ def is_sent(h):
     return h in load_data()["sent_hashes"]
 
 
+# ─── Парсинг RSS ─────────────────────────────────────────────────────────────
+
 def news_hash(entry):
     return hashlib.md5((entry.get("link","") + entry.get("title","")).encode()).hexdigest()
 
@@ -110,6 +121,9 @@ def is_relevant(entry):
 def fetch_news(limit=MAX_NEWS):
     results = []
     seen = set()
+    now = datetime.utcnow()
+    max_age_days = 30
+
     for feed_cfg in RSS_FEEDS:
         try:
             feed = feedparser.parse(feed_cfg["url"])
@@ -119,13 +133,21 @@ def fetch_news(limit=MAX_NEWS):
                     continue
                 if not is_relevant(entry):
                     continue
+
+                # Фильтр по дате — только новости не старше 30 дней
                 published = ""
+                pub_dt = None
                 if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    dt = datetime(*entry.published_parsed[:6])
-                    published = dt.strftime("%d %b %Y")
+                    pub_dt = datetime(*entry.published_parsed[:6])
+                    age_days = (now - pub_dt).days
+                    if age_days > max_age_days:
+                        continue
+                    published = pub_dt.strftime("%d %b %Y")
+
                 title_ru = translate_to_russian(entry.get("title", ""))
                 summary_raw = entry.get("summary", "")[:400]
                 summary_ru = translate_to_russian(summary_raw) if summary_raw else ""
+
                 results.append({
                     "hash": h,
                     "title": title_ru or entry.get("title", "Без заголовка"),
@@ -134,12 +156,21 @@ def fetch_news(limit=MAX_NEWS):
                     "source": feed_cfg["name"],
                     "flag": feed_cfg["flag"],
                     "published": published,
+                    "pub_dt": pub_dt,
                 })
                 seen.add(h)
         except Exception as e:
             log.warning(f"Feed error {feed_cfg['name']}: {e}")
+
+    # Сортируем по дате — сначала свежие
+    results.sort(key=lambda x: x["pub_dt"] or datetime.min, reverse=True)
+    # Убираем служебное поле перед возвратом
+    for r in results:
+        r.pop("pub_dt", None)
     return results[:limit]
 
+
+# ─── Форматирование ──────────────────────────────────────────────────────────
 
 def fmt_item(item, i):
     summary = item["summary"].replace("<","&lt;").replace(">","&gt;") if item["summary"] else ""
@@ -160,27 +191,29 @@ def fmt_digest(news_list):
     if not news_list:
         return "😴 Новых новостей пока нет. Загляни позже!"
     date_str = datetime.utcnow().strftime("%d %B %Y")
-    header = f"🌴 <b>Дайджест — Вьетнам, Бали, Сингапур</b>\n{date_str}\n{'─'*28}\n\n"
+    header = f"🌴 <b>Дайджест ЮВА</b> — {date_str}\n{'─'*28}\n\n"
     items = "\n\n".join(fmt_item(n, i+1) for i, n in enumerate(news_list))
     return header + items + "\n\n<i>Подписан на ежедневный дайджест ✅</i>"
 
 
+# ─── Команды ─────────────────────────────────────────────────────────────────
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name or "Путешественник"
-    kb = [
-        [InlineKeyboardButton("🌴 Получить новости", callback_data="get_news"),
-         InlineKeyboardButton("🔔 Подписаться", callback_data="subscribe")],
-        [InlineKeyboardButton("📍 Страны", callback_data="countries"),
-         InlineKeyboardButton("ℹ️ О боте", callback_data="about")],
-    ]
+    reply_kb = ReplyKeyboardMarkup(
+        [["🌴 Получить новости", "🔔 Подписаться"],
+         ["📍 Страны", "ℹ️ О боте"]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
     await update.message.reply_text(
         f"Привет, {name}! 🌏\n\n"
         "Я слежу за новостями туризма по <b>Вьетнаму, Индонезии (Бали) и Сингапуру</b>.\n\n"
         "🗓 Дайджест каждое утро в <b>10:00 по Алматы</b>\n"
         "🇷🇺 Все новости переводятся на русский язык\n\n"
-        "Выбери действие:",
+        "Кнопки внизу всегда под рукой 👇",
         parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(kb)
+        reply_markup=reply_kb,
     )
 
 async def cmd_news(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -188,6 +221,38 @@ async def cmd_news(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     news = fetch_news()
     for n in news: mark_sent(n["hash"])
     await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
+
+async def cmd_reply_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
+    if text == "🌴 Получить новости":
+        msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
+        news = fetch_news()
+        for n in news: mark_sent(n["hash"])
+        await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
+    elif text == "🔔 Подписаться":
+        add_subscriber(chat_id)
+        await update.message.reply_text(
+            "✅ Подписка оформлена!\nДайджест каждое утро в <b>10:00 по Алматы</b>.\n\nОтписаться: /unsubscribe",
+            parse_mode="HTML"
+        )
+    elif text == "📍 Страны":
+        await update.message.reply_text(
+            "🗺 <b>Страны, за которыми слежу</b>\n\n"
+            "🇻🇳 Вьетнам — Ханой, Хошимин, Дананг, Хойан, Нячанг, Фукуок\n"
+            "🇮🇩 Индонезия — Бали, Ломбок, Комодо, Джакарта\n"
+            "🇸🇬 Сингапур — Сентоза, центр города",
+            parse_mode="HTML"
+        )
+    elif text == "ℹ️ О боте":
+        await update.message.reply_text(
+            "🌴 <b>SEA Travel News Bot</b>\n\n"
+            "Собирает новости о Вьетнаме, Индонезии (Бали) и Сингапуре, "
+            "переводит на русский, удаляет дубли.\n\n"
+            "📅 Дайджест ежедневно в 10:00 по Алматы\n"
+            "🇷🇺 Автоперевод на русский\n🆓 Без рекламы",
+            parse_mode="HTML"
+        )
 
 async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     add_subscriber(update.effective_user.id)
@@ -217,13 +282,15 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ─── Callback кнопки ─────────────────────────────────────────────────────────
+
 async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
     uid = q.from_user.id
 
     if q.data == "get_news":
-        await q.edit_message_text("⏳ Собираю и перевожу новости...")
+        await q.edit_message_text("⏳ Собираю и перевожу новости на русский...")
         news = fetch_news()
         for n in news: mark_sent(n["hash"])
         kb = [[InlineKeyboardButton("🔔 Подписаться на дайджест", callback_data="subscribe")]]
@@ -241,7 +308,7 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.edit_message_text(
             "🗺 <b>Страны, за которыми слежу</b>\n\n"
             "🇻🇳 Вьетнам — Ханой, Хошимин, Дананг, Хойан, Нячанг, Фукуок\n"
-            "🇮🇩 Индонезия — Бали, Ломбок, Комодо, Джакарта\n"
+            "🇮🇩 Индонезия — Бали, Ломбок, Комодо, Джакарта, Уджунг\n"
             "🇸🇬 Сингапур — Сентоза, центр города",
             parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
@@ -249,22 +316,25 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = [[InlineKeyboardButton("← Назад", callback_data="back")]]
         await q.edit_message_text(
             "🌴 <b>SEA Travel News Bot</b>\n\n"
-            "Собирает новости о Вьетнаме, Индонезии (Бали) и Сингапуре, "
-            "переводит на русский, удаляет дубли.\n\n"
+            "Собирает новости о Вьетнаме, Индонезии (Бали) и Сингапуре, автоматически переводит на русский язык, "
+            "фильтрует по ключевым словам, удаляет дубли.\n\n"
             "📅 Дайджест ежедневно в 10:00 по Алматы\n"
-            "🇷🇺 Автоперевод на русский\n🆓 Без рекламы",
+            "🇷🇺 Автоперевод на русский язык\n"
+            "🆓 Бесплатно и без рекламы",
             parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
     elif q.data == "back":
         kb = [
             [InlineKeyboardButton("🌴 Получить новости", callback_data="get_news"),
              InlineKeyboardButton("🔔 Подписаться", callback_data="subscribe")],
-            [InlineKeyboardButton("📍 Страны", callback_data="countries"),
+            [InlineKeyboardButton("📍 Страны ЮВА", callback_data="countries"),
              InlineKeyboardButton("ℹ️ О боте", callback_data="about")],
         ]
         await q.edit_message_text("🌏 Главное меню — SEA Travel News",
             reply_markup=InlineKeyboardMarkup(kb))
 
+
+# ─── Ежедневная рассылка ─────────────────────────────────────────────────────
 
 async def send_daily(app):
     data = load_data()
@@ -281,6 +351,8 @@ async def send_daily(app):
             log.warning(f"Send error {uid}: {e}")
 
 
+# ─── Запуск ──────────────────────────────────────────────────────────────────
+
 def main():
     if not BOT_TOKEN:
         print("❌ Укажи BOT_TOKEN в переменных окружения!")
@@ -293,6 +365,8 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CallbackQueryHandler(cb))
+    from telegram.ext import MessageHandler, filters
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_reply_buttons))
     scheduler = AsyncIOScheduler()
     scheduler.add_job(lambda: asyncio.create_task(send_daily(app)),
         trigger="cron", hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC)
@@ -302,3 +376,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
