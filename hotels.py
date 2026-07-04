@@ -146,7 +146,7 @@ def _query_overpass(query: str) -> dict:
                     endpoint, params={"data": query}, headers=REQUEST_HEADERS, timeout=45
                 )
                 if resp.status_code == 429:
-                    wait = int(resp.headers.get("Retry-After", RETRY_BACKOFF_SEC))
+                    wait = int(resp.headers.get("Retry-After", 10))
                     log.warning("Overpass mirror %s rate-limited (429), waiting %ds", endpoint, wait)
                     time.sleep(wait)
                     continue
@@ -252,13 +252,18 @@ out center tags;
 
 def refresh_all_cities():
     log.info("Refreshing hotel cache for all cities...")
-    for key in CITIES:
+    city_keys = list(CITIES.keys())
+    for i, key in enumerate(city_keys):
         try:
             hotels = fetch_city_hotels(key)
             save_hotels(key, hotels)
             log.info("  %s: %d hotels saved", key, len(hotels))
         except Exception as e:
             log.error("  %s: refresh failed: %s", key, e)
+        if i < len(city_keys) - 1:
+            # пауза между городами — иначе Overpass fair-use лимит бьёт по
+            # следующему запросу, который улетает почти сразу за предыдущим
+            time.sleep(8)
 
 
 # ---------------------------------------------------------------------------
