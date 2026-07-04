@@ -1,432 +1,348 @@
-import asyncio
-import feedparser
-import logging
+"""
+hotels.py — модуль подбора отелей (Нячанг, Дананг, Хойан) для sea-travel-bot.
+
+Источник данных: Overpass API — прямой публичный доступ к данным
+OpenStreetMap. Никакой регистрации, ключа или карты не требуется вообще.
+
+ВАЖНОЕ ОГРАНИЧЕНИЕ, как и с прошлым вариантом на OpenTripMap:
+это данные из OpenStreetMap, а не отзывы живых постояльцев. Здесь нет
+пользовательских рейтингов и отзывов. Зато есть кое-что более честное,
+чем "условная значимость" OpenTripMap — тег `stars` в OSM, если он
+заполнен, это официальная звёздность отеля (когда её вносили редакторы
+карты). У большинства объектов его нет — тогда сортируем по количеству
+заполненных тегов (адрес, сайт, телефон и т.д.) как грубому proxy
+"насколько подробно описан объект в OSM".
+
+Публичные Overpass-инстансы иногда медленные/перегружены — поэтому здесь
+список из нескольких зеркал с автоматическим переключением при отказе.
+
+ENV переменные (опционально, ключей не требуется):
+  HOTELS_REFRESH_HOUR_UTC - час автообновления кэша, по умолчанию 20 (03:00 Алматы)
+"""
+
 import os
 import json
-import hashlib
-import urllib.request
+import html
+import time
+import asyncio
+import logging
+import sqlite3
 import urllib.parse
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timezone
 
+import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, ContextTypes
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
-import hotels  # модуль подбора отелей (Нячанг, Дананг, Хойан) — Google Places API
+log = logging.getLogger("hotels")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
-DATA_FILE = Path("sea_bot_data.json")
-SCHEDULE_HOUR_UTC = 5
-SCHEDULE_MINUTE_UTC = 0
-MAX_NEWS = 8
+REFRESH_HOUR_UTC = int(os.environ.get("HOTELS_REFRESH_HOUR_UTC", "20"))
+DB_PATH = os.environ.get("HOTELS_DB_PATH", "hotels.db")
 
-RSS_FEEDS = [
-    {"name": "Vietnam Travel", "url": "https://vietnam.travel/feed", "flag": "🇻🇳"},
-    {"name": "Vietnam Plus", "url": "https://en.vietnamplus.vn/rss/travel.rss", "flag": "🇻🇳"},
-    {"name": "Jakarta Post", "url": "https://www.thejakartapost.com/travel.rss", "flag": "🇮🇩"},
-    {"name": "Coconuts Bali", "url": "https://coconuts.co/bali/feed/", "flag": "🌴"},
-    {"name": "AsiaOne Travel", "url": "https://www.asiaone.com/rss/travel.xml", "flag": "✈️"},
-    {"name": "TTR Weekly", "url": "https://www.ttrweekly.com/site/feed/", "flag": "📰"},
+CITIES = {
+    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967},
+    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022},
+    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380},
+}
+CITY_LABELS = {k: v["label"] for k, v in CITIES.items()}
+
+SEARCH_RADIUS_M = 6000
+TOP_N = 10
+MAX_RETRIES_PER_MIRROR = 2
+RETRY_BACKOFF_SEC = 2
+
+# Несколько публичных зеркал Overpass — если одно лежит/тормозит, пробуем следующее
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
 ]
 
-SEA_KEYWORDS = [
-    "vietnam", "hanoi", "ho chi minh", "da nang", "danang", "hoi an", "nha trang",
-    "halong", "sapa", "phu quoc", "hue", "saigon",
-    "indonesia", "bali", "jakarta", "lombok", "komodo", "ubud", "denpasar",
-    "seminyak", "canggu", "yogyakarta", "surabaya", "sumatra", "java island",
-    "singapore", "sentosa", "changi",
-    "beach", "resort", "temple", "diving", "island", "visa", "flight", "travel",
-    "tourism", "hotel", "tour", "destination",
-]
-
-logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
-log = logging.getLogger(__name__)
+TOURISM_TYPES = "hotel|guest_house|hostel|motel|apartment"
 
 
-# ─── Перевод через бесплатный Google Translate ───────────────────────────────
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
 
-def translate_to_russian(text: str) -> str:
-    """Переводит текст на русский через бесплатный Google Translate API."""
-    if not text or not text.strip():
-        return text
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS hotels (
+            city_key TEXT, osm_id TEXT, name TEXT, stars TEXT,
+            address TEXT, website TEXT, phone TEXT, photo_url TEXT,
+            maps_url TEXT, updated_at TEXT,
+            PRIMARY KEY (city_key, osm_id)
+        )
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+def save_hotels(city_key: str, hotels: list[dict]):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM hotels WHERE city_key = ?", (city_key,))
+    now = datetime.now(timezone.utc).isoformat()
+    for h in hotels:
+        conn.execute(
+            """
+            INSERT INTO hotels
+            (city_key, osm_id, name, stars, address, website, phone, photo_url, maps_url, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (city_key, h["osm_id"], h["name"], h["stars"], h["address"],
+             h["website"], h["phone"], h["photo_url"], h["maps_url"], now),
+        )
+    conn.commit()
+    conn.close()
+
+
+def load_hotels(city_key: str) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT * FROM hotels WHERE city_key = ? ORDER BY rowid LIMIT ?",
+        (city_key, TOP_N),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def last_updated(city_key: str) -> str | None:
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute("SELECT MAX(updated_at) FROM hotels WHERE city_key = ?", (city_key,)).fetchone()
+    conn.close()
+    return row[0] if row else None
+
+
+# ---------------------------------------------------------------------------
+# Overpass fetching
+# ---------------------------------------------------------------------------
+
+def _query_overpass(query: str) -> dict:
+    """Пробует все зеркала по очереди, с retry внутри каждого."""
+    last_exc = None
+    for endpoint in OVERPASS_ENDPOINTS:
+        for attempt in range(1, MAX_RETRIES_PER_MIRROR + 1):
+            try:
+                resp = requests.post(endpoint, data={"data": query}, timeout=40)
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    raise requests.HTTPError(f"{resp.status_code} from {endpoint}")
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException as e:
+                last_exc = e
+                log.warning("Overpass mirror %s failed (attempt %d/%d): %s",
+                            endpoint, attempt, MAX_RETRIES_PER_MIRROR, e)
+                time.sleep(RETRY_BACKOFF_SEC)
+        log.warning("Mirror %s exhausted, trying next mirror...", endpoint)
+    raise last_exc
+
+
+def _fetch_wikidata_image(qid: str) -> str | None:
+    """Best-effort: если у объекта есть привязка к Wikidata — пробуем достать
+    фото оттуда (Wikimedia Commons). Не критично, если не получится."""
     try:
-        text = text[:500]
-        params = urllib.parse.urlencode({
-            "client": "gtx",
-            "sl": "auto",
-            "tl": "ru",
-            "dt": "t",
-            "q": text,
-        })
-        url = f"https://translate.googleapis.com/translate_a/single?{params}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        result = ""
-        for block in data[0]:
-            if block[0]:
-                result += block[0]
-        return result.strip() if result.strip() else text
+        url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        entity = resp.json()["entities"][qid]
+        p18 = entity.get("claims", {}).get("P18")
+        if not p18:
+            return None
+        filename = p18[0]["mainsnak"]["datavalue"]["value"]
+        filename_enc = urllib.parse.quote(filename.replace(" ", "_"))
+        return f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename_enc}?width=800"
     except Exception as e:
-        log.warning(f"Перевод не удался: {e}")
-        return text
+        log.debug("Wikidata image fetch failed for %s: %s", qid, e)
+        return None
 
 
-# ─── Хранилище данных ────────────────────────────────────────────────────────
+def fetch_city_hotels(city_key: str) -> list[dict]:
+    city = CITIES[city_key]
+    query = f"""
+[out:json][timeout:30];
+(
+  node["tourism"~"^({TOURISM_TYPES})$"](around:{SEARCH_RADIUS_M},{city['lat']},{city['lon']});
+  way["tourism"~"^({TOURISM_TYPES})$"](around:{SEARCH_RADIUS_M},{city['lat']},{city['lon']});
+);
+out center tags;
+"""
+    data = _query_overpass(query)
+    elements = data.get("elements", [])
 
-def load_data():
-    if DATA_FILE.exists():
-        with open(DATA_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    return {"subscribers": [], "sent_hashes": []}
+    candidates = []
+    for el in elements:
+        tags = el.get("tags", {})
+        name = tags.get("name")
+        if not name:
+            continue
 
+        lat = el.get("lat") or el.get("center", {}).get("lat")
+        lon = el.get("lon") or el.get("center", {}).get("lon")
+        address = ", ".join(
+            p for p in [
+                tags.get("addr:housenumber"), tags.get("addr:street"),
+                tags.get("addr:suburb"), tags.get("addr:city"),
+            ] if p
+        ) or "адрес не указан в OSM"
 
-def save_data(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        maps_url = (
+            f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=18/{lat}/{lon}"
+            if lat and lon else
+            f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(name + ' ' + address)}"
+        )
 
+        candidates.append({
+            "osm_id": f"{el['type']}/{el['id']}",
+            "name": name,
+            "stars": tags.get("stars"),
+            "address": address,
+            "website": tags.get("website") or tags.get("contact:website"),
+            "phone": tags.get("phone") or tags.get("contact:phone"),
+            "wikidata": tags.get("wikidata"),
+            "maps_url": maps_url,
+            "photo_url": None,
+            "_tag_count": len(tags),
+        })
 
-def add_subscriber(uid):
-    data = load_data()
-    if uid not in data["subscribers"]:
-        data["subscribers"].append(uid)
-        save_data(data)
-
-
-def remove_subscriber(uid):
-    data = load_data()
-    if uid in data["subscribers"]:
-        data["subscribers"].remove(uid)
-        save_data(data)
-
-
-def is_subscribed(uid):
-    return uid in load_data()["subscribers"]
-
-
-def mark_sent(h):
-    data = load_data()
-    data["sent_hashes"].append(h)
-    data["sent_hashes"] = data["sent_hashes"][-500:]
-    save_data(data)
-
-
-def is_sent(h):
-    return h in load_data()["sent_hashes"]
-
-
-# ─── Парсинг RSS ─────────────────────────────────────────────────────────────
-
-def news_hash(entry):
-    return hashlib.md5((entry.get("link", "") + entry.get("title", "")).encode()).hexdigest()
-
-
-def is_relevant(entry):
-    text = (entry.get("title", "") + " " + entry.get("summary", "") + " " + entry.get("link", "")).lower()
-    return any(kw in text for kw in SEA_KEYWORDS)
-
-
-def fetch_news(limit=MAX_NEWS):
-    results = []
-    seen = set()
-    now = datetime.utcnow()
-    max_age_days = 30
-
-    for feed_cfg in RSS_FEEDS:
+    def sort_key(h):
         try:
-            feed = feedparser.parse(feed_cfg["url"])
-            for entry in feed.entries[:15]:
-                h = news_hash(entry)
-                if h in seen or is_sent(h):
-                    continue
-                if not is_relevant(entry):
-                    continue
+            stars_val = float(h["stars"]) if h["stars"] else -1.0
+        except ValueError:
+            stars_val = -1.0
+        return (stars_val >= 0, stars_val, h["_tag_count"])
 
-                # Фильтр по дате — только новости не старше 30 дней
-                published = ""
-                pub_dt = None
-                if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    pub_dt = datetime(*entry.published_parsed[:6])
-                    age_days = (now - pub_dt).days
-                    if age_days > max_age_days:
-                        continue
-                    published = pub_dt.strftime("%d %b %Y")
+    candidates.sort(key=sort_key, reverse=True)
+    top = candidates[:TOP_N]
 
-                title_ru = translate_to_russian(entry.get("title", ""))
-                summary_raw = entry.get("summary", "")[:400]
-                summary_ru = translate_to_russian(summary_raw) if summary_raw else ""
+    # фото только для финальных top N — не тратим лишние запросы к Wikidata
+    for h in top:
+        if h.get("wikidata"):
+            h["photo_url"] = _fetch_wikidata_image(h["wikidata"])
+        h.pop("wikidata", None)
+        h.pop("_tag_count", None)
 
-                results.append({
-                    "hash": h,
-                    "title": title_ru or entry.get("title", "Без заголовка"),
-                    "link": entry.get("link", ""),
-                    "summary": summary_ru,
-                    "source": feed_cfg["name"],
-                    "flag": feed_cfg["flag"],
-                    "published": published,
-                    "pub_dt": pub_dt,
-                })
-                seen.add(h)
-        except Exception as e:
-            log.warning(f"Feed error {feed_cfg['name']}: {e}")
-
-    # Сортируем по дате — сначала свежие
-    results.sort(key=lambda x: x["pub_dt"] or datetime.min, reverse=True)
-    # Убираем служебное поле перед возвратом
-    for r in results:
-        r.pop("pub_dt", None)
-    return results[:limit]
+    return top
 
 
-# ─── Форматирование ──────────────────────────────────────────────────────────
-
-def fmt_item(item, i):
-    summary = item["summary"].replace("<", "&lt;").replace(">", "&gt;") if item["summary"] else ""
-    if summary:
-        dot = summary.find(". ")
-        if dot > 40:
-            summary = summary[:dot + 1]
-        summary = f"\n<i>{summary[:200]}</i>"
-    date = f" • {item['published']}" if item["published"] else ""
-    return (
-        f"{item['flag']} <b>{i}. {item['title']}</b>\n"
-        f"<code>{item['source']}{date}</code>"
-        f"{summary}\n"
-        f"<a href=\"{item['link']}\">Читать →</a>"
-    )
-
-
-def fmt_digest(news_list):
-    if not news_list:
-        return "😴 Новых новостей пока нет. Загляни позже!"
-    date_str = datetime.utcnow().strftime("%d %B %Y")
-    header = f"🌴 <b>Дайджест ЮВА</b> — {date_str}\n{'─' * 28}\n\n"
-    items = "\n\n".join(fmt_item(n, i + 1) for i, n in enumerate(news_list))
-    return header + items + "\n\n<i>Подписан на ежедневный дайджест ✅</i>"
-
-
-# ─── Команды ─────────────────────────────────────────────────────────────────
-
-async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    name = update.effective_user.first_name or "Путешественник"
-    reply_kb = ReplyKeyboardMarkup(
-        [["🌴 Получить новости", "🔔 Подписаться"],
-         ["📍 Страны", "ℹ️ О боте"],
-         ["🏨 Отели"]],
-        resize_keyboard=True,
-        is_persistent=True,
-    )
-    await update.message.reply_text(
-        f"Привет, {name}! 🌏\n\n"
-        "Я слежу за новостями туризма по <b>Вьетнаму, Индонезии (Бали) и Сингапуру</b>.\n\n"
-        "🗓 Дайджест каждое утро в <b>10:00 по Алматы</b>\n"
-        "🇷🇺 Все новости переводятся на русский язык\n"
-        "🏨 А ещё подберу топ отелей в Нячанге, Дананге и Хойане\n\n"
-        "Кнопки внизу всегда под рукой 👇",
-        parse_mode="HTML",
-        reply_markup=reply_kb,
-    )
-
-
-async def cmd_news(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
-    news = fetch_news()
-    for n in news:
-        mark_sent(n["hash"])
-    await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
-
-
-async def cmd_reply_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    chat_id = update.effective_chat.id
-
-    if text == "🌴 Получить новости":
-        msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
-        news = fetch_news()
-        for n in news:
-            mark_sent(n["hash"])
-        await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
-
-    elif text == "🔔 Подписаться":
-        add_subscriber(chat_id)
-        await update.message.reply_text(
-            "✅ Подписка оформлена!\nДайджест каждое утро в <b>10:00 по Алматы</b>.\n\nОтписаться: /unsubscribe",
-            parse_mode="HTML"
-        )
-
-    elif text == "📍 Страны":
-        await update.message.reply_text(
-            "🗺 <b>Страны, за которыми слежу</b>\n\n"
-            "🇻🇳 Вьетнам — Ханой, Хошимин, Дананг, Хойан, Нячанг, Фукуок\n"
-            "🇮🇩 Индонезия — Бали, Ломбок, Комодо, Джакарта\n"
-            "🇸🇬 Сингапур — Сентоза, центр города",
-            parse_mode="HTML"
-        )
-
-    elif text == "ℹ️ О боте":
-        await update.message.reply_text(
-            "🌴 <b>SEA Travel News Bot</b>\n\n"
-            "Собирает новости о Вьетнаме, Индонезии (Бали) и Сингапуре, "
-            "переводит на русский, удаляет дубли.\n\n"
-            "📅 Дайджест ежедневно в 10:00 по Алматы\n"
-            "🇷🇺 Автоперевод на русский\n🆓 Без рекламы",
-            parse_mode="HTML"
-        )
-
-    elif text == "🏨 Отели":
-        await hotels.show_city_menu(update, ctx)
-
-
-async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    add_subscriber(update.effective_user.id)
-    await update.message.reply_text(
-        "✅ Подписка оформлена!\nДайджест каждое утро в <b>10:00 по Алматы</b>.\n\nОтписаться: /unsubscribe",
-        parse_mode="HTML"
-    )
-
-
-async def cmd_unsubscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    remove_subscriber(update.effective_user.id)
-    await update.message.reply_text("🔕 Отписан. Снова подписаться: /subscribe")
-
-
-async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    data = load_data()
-    status = "✅ Подписан" if is_subscribed(update.effective_user.id) else "🔕 Не подписан"
-    await update.message.reply_text(
-        f"📊 <b>Статус</b>\n\nТвой статус: {status}\nПодписчиков всего: {len(data['subscribers'])}\n"
-        f"Источников RSS: {len(RSS_FEEDS)}\nРассылка: 10:00 Алматы\n🇷🇺 Перевод: включён",
-        parse_mode="HTML"
-    )
-
-
-async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📖 <b>Команды</b>\n\n/start — главное меню\n/news — новости прямо сейчас\n"
-        "/subscribe — подписаться\n/unsubscribe — отписаться\n/status — статус\n"
-        "/refresh_hotels — обновить данные по отелям прямо сейчас\n/help — справка",
-        parse_mode="HTML"
-    )
-
-
-# ─── Callback кнопки (новости) ────────────────────────────────────────────────
-# Паттерн ограничен конкретными значениями, чтобы не конфликтовать с
-# CallbackQueryHandler(hotels.on_city_selected, pattern="^city:") из hotels.py —
-# без ограничения этот хэндлер перехватывал бы вообще любой callback_data.
-
-async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    uid = q.from_user.id
-
-    if q.data == "get_news":
-        await q.edit_message_text("⏳ Собираю и перевожу новости на русский...")
-        news = fetch_news()
-        for n in news:
-            mark_sent(n["hash"])
-        kb = [[InlineKeyboardButton("🔔 Подписаться на дайджест", callback_data="subscribe")]]
-        await q.edit_message_text(fmt_digest(news), parse_mode="HTML",
-                                   disable_web_page_preview=True, reply_markup=InlineKeyboardMarkup(kb))
-
-    elif q.data == "subscribe":
-        add_subscriber(uid)
-        await q.edit_message_text(
-            "✅ <b>Подписка оформлена!</b>\n\nДайджест каждое утро в <b>10:00 по Алматы</b>.\nОтписаться: /unsubscribe",
-            parse_mode="HTML")
-
-    elif q.data == "countries":
-        kb = [[InlineKeyboardButton("← Назад", callback_data="back")]]
-        await q.edit_message_text(
-            "🗺 <b>Страны, за которыми слежу</b>\n\n"
-            "🇻🇳 Вьетнам — Ханой, Хошимин, Дананг, Хойан, Нячанг, Фукуок\n"
-            "🇮🇩 Индонезия — Бали, Ломбок, Комодо, Джакарта, Уджунг\n"
-            "🇸🇬 Сингапур — Сентоза, центр города",
-            parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
-
-    elif q.data == "about":
-        kb = [[InlineKeyboardButton("← Назад", callback_data="back")]]
-        await q.edit_message_text(
-            "🌴 <b>SEA Travel News Bot</b>\n\n"
-            "Собирает новости о Вьетнаме, Индонезии (Бали) и Сингапуре, автоматически переводит на русский язык, "
-            "фильтрует по ключевым словам, удаляет дубли.\n\n"
-            "📅 Дайджест ежедневно в 10:00 по Алматы\n"
-            "🇷🇺 Автоперевод на русский язык\n"
-            "🆓 Бесплатно и без рекламы",
-            parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
-
-    elif q.data == "back":
-        kb = [
-            [InlineKeyboardButton("🌴 Получить новости", callback_data="get_news"),
-             InlineKeyboardButton("🔔 Подписаться", callback_data="subscribe")],
-            [InlineKeyboardButton("📍 Страны ЮВА", callback_data="countries"),
-             InlineKeyboardButton("ℹ️ О боте", callback_data="about")],
-        ]
-        await q.edit_message_text("🌏 Главное меню — SEA Travel News",
-                                   reply_markup=InlineKeyboardMarkup(kb))
-
-
-# ─── Ежедневная рассылка ─────────────────────────────────────────────────────
-
-async def send_daily(app):
-    data = load_data()
-    if not data["subscribers"]:
-        return
-    news = fetch_news()
-    if not news:
-        return
-    text = fmt_digest(news)
-    for n in news:
-        mark_sent(n["hash"])
-    for uid in data["subscribers"]:
+def refresh_all_cities():
+    log.info("Refreshing hotel cache for all cities...")
+    for key in CITIES:
         try:
-            await app.bot.send_message(uid, text, parse_mode="HTML", disable_web_page_preview=True)
-            await asyncio.sleep(0.05)
+            hotels = fetch_city_hotels(key)
+            save_hotels(key, hotels)
+            log.info("  %s: %d hotels saved", key, len(hotels))
         except Exception as e:
-            log.warning(f"Send error {uid}: {e}")
+            log.error("  %s: refresh failed: %s", key, e)
 
 
-# ─── Запуск ──────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Telegram handlers
+# ---------------------------------------------------------------------------
 
-async def _post_init(app: Application):
-    """post_init для Application: автозаполнение кэша отелей при старте,
-    если он пуст (первый запуск / после редеплоя на Railway)."""
-    await hotels._startup_autofill(app)
+def format_hotel_card(idx: int, h: dict) -> str:
+    name = html.escape(h["name"])
+    address = html.escape(h["address"])
+    lines = [f"{idx}. <b>{name}</b>"]
+    if h["stars"]:
+        try:
+            lines.append("⭐" * round(float(h["stars"])) + f" ({h['stars']} офиц. звёзд)")
+        except ValueError:
+            pass
+    lines.append(f"📍 {address}")
+    if h["phone"]:
+        lines.append(f"📞 {html.escape(h['phone'])}")
+    if h["website"]:
+        url = h["website"] if h["website"].startswith("http") else f"https://{h['website']}"
+        lines.append(f'🌐 <a href="{html.escape(url)}">Сайт отеля</a>')
+    lines.append(f'<a href="{html.escape(h["maps_url"])}">Открыть на карте</a>')
+    return "\n".join(lines)
 
 
-def main():
-    if not BOT_TOKEN:
-        print("❌ Укажи BOT_TOKEN в переменных окружения!")
+async def show_city_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton(label, callback_data=f"city:{key}")]
+        for key, label in CITY_LABELS.items()
+    ]
+    await update.message.reply_text(
+        "Выбери город — пришлю подборку отелей (данные из OpenStreetMap, "
+        "без пользовательских отзывов — обновляется раз в сутки):",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def on_city_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    city_key = query.data.split(":", 1)[1]
+    hotels = load_hotels(city_key)
+
+    if not hotels:
+        await query.message.reply_text(
+            "Кэш ещё не заполнен для этого города — бот заполняет его автоматически "
+            "при старте. Если прошло больше пары минут, вызови /refresh_hotels."
+        )
         return
 
-    app = Application.builder().token(BOT_TOKEN).post_init(_post_init).build()
+    updated = last_updated(city_key)
+    header = (
+        f"<b>{html.escape(CITY_LABELS[city_key])} — {len(hotels)} отелей</b>\n"
+        f"<i>обновлено: {html.escape(updated or '—')}</i>\n"
+    )
+    await query.message.reply_text(header, parse_mode="HTML")
 
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("news", cmd_news))
-    app.add_handler(CommandHandler("subscribe", cmd_subscribe))
-    app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
-    app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CallbackQueryHandler(
-        cb, pattern=r"^(get_news|subscribe|countries|about|back)$"
-    ))
+    for i, h in enumerate(hotels, start=1):
+        text = format_hotel_card(i, h)
+        try:
+            if h["photo_url"]:
+                await query.message.reply_photo(photo=h["photo_url"], caption=text, parse_mode="HTML")
+            else:
+                await query.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+        except Exception as e:
+            log.warning("Failed to send hotel card for %s: %s", h["name"], e)
+            await query.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
-    from telegram.ext import MessageHandler, filters
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_reply_buttons))
 
-    hotels.register(app)  # добавляет /refresh_hotels, CallbackQueryHandler("^city:"), суточный cron
+async def refresh_hotels_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Обновляю данные по отелям, подожди ~20-40 сек...")
+    await asyncio.to_thread(refresh_all_cities)
+    await update.message.reply_text("Готово. Жми '🏨 Отели' чтобы посмотреть.")
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(lambda: asyncio.create_task(send_daily(app)),
-                       trigger="cron", hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC)
+
+async def _startup_autofill(app: Application):
+    empty_cities = [key for key in CITIES if not load_hotels(key)]
+    if not empty_cities:
+        log.info("Hotels cache already populated for all cities.")
+        return
+    log.info("Empty hotels cache for %s, running initial fetch...", empty_cities)
+    await asyncio.to_thread(refresh_all_cities)
+    log.info("Hotels startup autofill complete.")
+
+
+# ---------------------------------------------------------------------------
+# Public API for bot.py
+# ---------------------------------------------------------------------------
+
+def register(app: Application):
+    """Подключает модуль отелей к уже собранному Application.
+
+    Использование в bot.py:
+        import hotels
+        app = Application.builder().token(BOT_TOKEN).build()
+        hotels.register(app)
+    """
+    init_db()
+    app.add_handler(CommandHandler("refresh_hotels", refresh_hotels_cmd))
+    # узкий паттерн — не пересекается с CallbackQueryHandler(cb) в bot.py,
+    # который слушает get_news/subscribe/countries/about/back
+    app.add_handler(CallbackQueryHandler(on_city_selected, pattern=r"^city:"))
+
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(refresh_all_cities, "cron", hour=REFRESH_HOUR_UTC, minute=0)
     scheduler.start()
-
-    log.info("🌴 SEA Travel News Bot (+ 🏨 Отели) запущен!")
-    app.run_polling(drop_pending_updates=True)
-
-
-if __name__ == "__main__":
-    main()
-
+    log.info("Hotels module (Overpass/OSM, no API key) registered. Daily refresh at %02d:00 UTC.",
+              REFRESH_HOUR_UTC)
