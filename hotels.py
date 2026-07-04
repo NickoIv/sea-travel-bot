@@ -1,12 +1,22 @@
 """
 hotels.py — модуль подбора отелей (Нячанг, Дананг, Хойан) для sea-travel-bot.
 
-Источник данных: Google Places API (New). Подключается к существующему
-Application одним вызовом register(app) — свой токен бота модулю не нужен,
-только GOOGLE_PLACES_API_KEY.
+Источник данных: Overpass API — прямой публичный доступ к данным
+OpenStreetMap. Никакой регистрации, ключа или карты не требуется вообще.
 
-ENV переменные (добавить в Railway Variables к уже существующим):
-  GOOGLE_PLACES_API_KEY - ключ Google Cloud с включённым Places API (New)
+ВАЖНОЕ ОГРАНИЧЕНИЕ, как и с прошлым вариантом на OpenTripMap:
+это данные из OpenStreetMap, а не отзывы живых постояльцев. Здесь нет
+пользовательских рейтингов и отзывов. Зато есть кое-что более честное,
+чем "условная значимость" OpenTripMap — тег `stars` в OSM, если он
+заполнен, это официальная звёздность отеля (когда её вносили редакторы
+карты). У большинства объектов его нет — тогда сортируем по количеству
+заполненных тегов (адрес, сайт, телефон и т.д.) как грубому proxy
+"насколько подробно описан объект в OSM".
+
+Публичные Overpass-инстансы иногда медленные/перегружены — поэтому здесь
+список из нескольких зеркал с автоматическим переключением при отказе.
+
+ENV переменные (опционально, ключей не требуется):
   HOTELS_REFRESH_HOUR_UTC - час автообновления кэша, по умолчанию 20 (03:00 Алматы)
 """
 
@@ -17,6 +27,7 @@ import time
 import asyncio
 import logging
 import sqlite3
+import urllib.parse
 from datetime import datetime, timezone
 
 import requests
@@ -26,47 +37,33 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 log = logging.getLogger("hotels")
 
-GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
 REFRESH_HOUR_UTC = int(os.environ.get("HOTELS_REFRESH_HOUR_UTC", "20"))
 DB_PATH = os.environ.get("HOTELS_DB_PATH", "hotels.db")
 
 CITIES = {
-    "nha_trang": "Nha Trang, Vietnam",
-    "da_nang": "Da Nang, Vietnam",
-    "hoi_an": "Hoi An, Vietnam",
+    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967},
+    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022},
+    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380},
 }
-CITY_LABELS = {
-    "nha_trang": "🏖 Нячанг",
-    "da_nang": "🌉 Дананг",
-    "hoi_an": "🏮 Хойан",
-}
+CITY_LABELS = {k: v["label"] for k, v in CITIES.items()}
 
-MIN_REVIEWS = 50
-MIN_REVIEWS_FLOOR = 15
+SEARCH_RADIUS_M = 6000
 TOP_N = 10
-MAX_RETRIES = 3
+MAX_RETRIES_PER_MIRROR = 2
 RETRY_BACKOFF_SEC = 2
 
-PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
-PLACES_PHOTO_URL = "https://places.googleapis.com/v1/{photo_name}/media"
+# Несколько публичных зеркал Overpass — если одно лежит/тормозит, пробуем следующее
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+]
 
-FIELD_MASK_SEARCH = ",".join([
-    "places.id", "places.displayName", "places.rating", "places.userRatingCount",
-    "places.priceLevel", "places.formattedAddress", "places.googleMapsUri", "places.photos",
-])
-FIELD_MASK_DETAILS = "reviews.text,reviews.rating"
-
-PRICE_LEVEL_MAP = {
-    "PRICE_LEVEL_FREE": "—",
-    "PRICE_LEVEL_INEXPENSIVE": "$",
-    "PRICE_LEVEL_MODERATE": "$$",
-    "PRICE_LEVEL_EXPENSIVE": "$$$",
-    "PRICE_LEVEL_VERY_EXPENSIVE": "$$$$",
-}
+TOURISM_TYPES = "hotel|guest_house|hostel|motel|apartment"
 
 
 # ---------------------------------------------------------------------------
-# Storage (отдельная SQLite-база, не пересекается с sea_bot_data.json)
+# Storage
 # ---------------------------------------------------------------------------
 
 def init_db():
@@ -74,10 +71,10 @@ def init_db():
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS hotels (
-            city_key TEXT, place_id TEXT, name TEXT, rating REAL,
-            review_count INTEGER, price_level TEXT, address TEXT,
-            maps_url TEXT, photo_url TEXT, review_snippets TEXT, updated_at TEXT,
-            PRIMARY KEY (city_key, place_id)
+            city_key TEXT, osm_id TEXT, name TEXT, stars TEXT,
+            address TEXT, website TEXT, phone TEXT, photo_url TEXT,
+            maps_url TEXT, updated_at TEXT,
+            PRIMARY KEY (city_key, osm_id)
         )
         """
     )
@@ -93,13 +90,11 @@ def save_hotels(city_key: str, hotels: list[dict]):
         conn.execute(
             """
             INSERT INTO hotels
-            (city_key, place_id, name, rating, review_count, price_level,
-             address, maps_url, photo_url, review_snippets, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (city_key, osm_id, name, stars, address, website, phone, photo_url, maps_url, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (city_key, h["place_id"], h["name"], h["rating"], h["review_count"],
-             h["price_level"], h["address"], h["maps_url"], h["photo_url"],
-             json.dumps(h["review_snippets"], ensure_ascii=False), now),
+            (city_key, h["osm_id"], h["name"], h["stars"], h["address"],
+             h["website"], h["phone"], h["photo_url"], h["maps_url"], now),
         )
     conn.commit()
     conn.close()
@@ -109,16 +104,11 @@ def load_hotels(city_key: str) -> list[dict]:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT * FROM hotels WHERE city_key = ? ORDER BY rating DESC, review_count DESC LIMIT ?",
+        "SELECT * FROM hotels WHERE city_key = ? ORDER BY rowid LIMIT ?",
         (city_key, TOP_N),
     ).fetchall()
     conn.close()
-    result = []
-    for r in rows:
-        d = dict(r)
-        d["review_snippets"] = json.loads(d["review_snippets"] or "[]")
-        result.append(d)
-    return result
+    return [dict(r) for r in rows]
 
 
 def last_updated(city_key: str) -> str | None:
@@ -129,107 +119,121 @@ def last_updated(city_key: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Google Places fetching
+# Overpass fetching
 # ---------------------------------------------------------------------------
 
-def _request_with_retry(method: str, url: str, **kwargs) -> requests.Response:
+def _query_overpass(query: str) -> dict:
+    """Пробует все зеркала по очереди, с retry внутри каждого."""
     last_exc = None
-    for attempt in range(1, MAX_RETRIES + 1):
-        try:
-            resp = requests.request(method, url, **kwargs)
-            if resp.status_code == 429 or resp.status_code >= 500:
-                raise requests.HTTPError(f"{resp.status_code}: {resp.text[:200]}")
-            resp.raise_for_status()
-            return resp
-        except requests.RequestException as e:
-            last_exc = e
-            if attempt < MAX_RETRIES:
-                wait = RETRY_BACKOFF_SEC * attempt
-                log.warning("Request failed (attempt %d/%d), retrying in %ds: %s",
-                            attempt, MAX_RETRIES, wait, e)
-                time.sleep(wait)
+    for endpoint in OVERPASS_ENDPOINTS:
+        for attempt in range(1, MAX_RETRIES_PER_MIRROR + 1):
+            try:
+                resp = requests.post(endpoint, data={"data": query}, timeout=40)
+                if resp.status_code == 429 or resp.status_code >= 500:
+                    raise requests.HTTPError(f"{resp.status_code} from {endpoint}")
+                resp.raise_for_status()
+                return resp.json()
+            except requests.RequestException as e:
+                last_exc = e
+                log.warning("Overpass mirror %s failed (attempt %d/%d): %s",
+                            endpoint, attempt, MAX_RETRIES_PER_MIRROR, e)
+                time.sleep(RETRY_BACKOFF_SEC)
+        log.warning("Mirror %s exhausted, trying next mirror...", endpoint)
     raise last_exc
 
 
-def _search_hotels_raw(city_query: str, min_reviews: int) -> list[dict]:
-    headers = {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": GOOGLE_PLACES_API_KEY,
-        "X-Goog-FieldMask": FIELD_MASK_SEARCH,
-    }
-    payload = {
-        "textQuery": f"best hotels in {city_query}",
-        "includedType": "lodging",
-        "strictTypeFiltering": True,
-        "languageCode": "en",
-        "maxResultCount": 20,
-    }
-    resp = _request_with_retry("POST", PLACES_SEARCH_URL, headers=headers, json=payload, timeout=30)
-    places = resp.json().get("places", [])
-
-    hotels = []
-    for p in places:
-        rating = p.get("rating")
-        review_count = p.get("userRatingCount", 0)
-        if rating is None or review_count < min_reviews:
-            continue
-        photo_url = None
-        photos = p.get("photos") or []
-        if photos:
-            photo_name = photos[0]["name"]
-            photo_url = f"{PLACES_PHOTO_URL.format(photo_name=photo_name)}?maxWidthPx=800&key={GOOGLE_PLACES_API_KEY}"
-        hotels.append({
-            "place_id": p["id"],
-            "name": p.get("displayName", {}).get("text", "Без названия"),
-            "rating": rating,
-            "review_count": review_count,
-            "price_level": PRICE_LEVEL_MAP.get(p.get("priceLevel", ""), "н/д"),
-            "address": p.get("formattedAddress", ""),
-            "maps_url": p.get("googleMapsUri", ""),
-            "photo_url": photo_url,
-            "review_snippets": [],
-        })
-    hotels.sort(key=lambda h: (h["rating"], h["review_count"]), reverse=True)
-    return hotels
-
-
-def fetch_city_hotels(city_query: str) -> list[dict]:
-    hotels = _search_hotels_raw(city_query, MIN_REVIEWS)
-    if len(hotels) < 5 and MIN_REVIEWS_FLOOR < MIN_REVIEWS:
-        log.info("Only %d hotels passed MIN_REVIEWS=%d for '%s', retrying with floor=%d",
-                  len(hotels), MIN_REVIEWS, city_query, MIN_REVIEWS_FLOOR)
-        hotels = _search_hotels_raw(city_query, MIN_REVIEWS_FLOOR)
-    top_candidates = hotels[:TOP_N]
-    for h in top_candidates:
-        h["review_snippets"] = fetch_review_snippets(h["place_id"])
-    return top_candidates
-
-
-def fetch_review_snippets(place_id: str, limit: int = 3) -> list[str]:
-    url = f"https://places.googleapis.com/v1/places/{place_id}"
-    headers = {"X-Goog-Api-Key": GOOGLE_PLACES_API_KEY, "X-Goog-FieldMask": FIELD_MASK_DETAILS}
+def _fetch_wikidata_image(qid: str) -> str | None:
+    """Best-effort: если у объекта есть привязка к Wikidata — пробуем достать
+    фото оттуда (Wikimedia Commons). Не критично, если не получится."""
     try:
-        resp = _request_with_retry("GET", url, headers=headers, params={"languageCode": "en"}, timeout=20)
-        reviews = resp.json().get("reviews", [])
-    except requests.RequestException as e:
-        log.warning("Review fetch failed for %s: %s", place_id, e)
-        return []
-    snippets = []
-    for r in reviews[:limit]:
-        text = r.get("text", {}).get("text", "").strip().replace("\n", " ")
-        if text:
-            snippets.append(text[:180] + ("…" if len(text) > 180 else ""))
-    return snippets
+        url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        entity = resp.json()["entities"][qid]
+        p18 = entity.get("claims", {}).get("P18")
+        if not p18:
+            return None
+        filename = p18[0]["mainsnak"]["datavalue"]["value"]
+        filename_enc = urllib.parse.quote(filename.replace(" ", "_"))
+        return f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename_enc}?width=800"
+    except Exception as e:
+        log.debug("Wikidata image fetch failed for %s: %s", qid, e)
+        return None
+
+
+def fetch_city_hotels(city_key: str) -> list[dict]:
+    city = CITIES[city_key]
+    query = f"""
+[out:json][timeout:30];
+(
+  node["tourism"~"^({TOURISM_TYPES})$"](around:{SEARCH_RADIUS_M},{city['lat']},{city['lon']});
+  way["tourism"~"^({TOURISM_TYPES})$"](around:{SEARCH_RADIUS_M},{city['lat']},{city['lon']});
+);
+out center tags;
+"""
+    data = _query_overpass(query)
+    elements = data.get("elements", [])
+
+    candidates = []
+    for el in elements:
+        tags = el.get("tags", {})
+        name = tags.get("name")
+        if not name:
+            continue
+
+        lat = el.get("lat") or el.get("center", {}).get("lat")
+        lon = el.get("lon") or el.get("center", {}).get("lon")
+        address = ", ".join(
+            p for p in [
+                tags.get("addr:housenumber"), tags.get("addr:street"),
+                tags.get("addr:suburb"), tags.get("addr:city"),
+            ] if p
+        ) or "адрес не указан в OSM"
+
+        maps_url = (
+            f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}#map=18/{lat}/{lon}"
+            if lat and lon else
+            f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(name + ' ' + address)}"
+        )
+
+        candidates.append({
+            "osm_id": f"{el['type']}/{el['id']}",
+            "name": name,
+            "stars": tags.get("stars"),
+            "address": address,
+            "website": tags.get("website") or tags.get("contact:website"),
+            "phone": tags.get("phone") or tags.get("contact:phone"),
+            "wikidata": tags.get("wikidata"),
+            "maps_url": maps_url,
+            "photo_url": None,
+            "_tag_count": len(tags),
+        })
+
+    def sort_key(h):
+        try:
+            stars_val = float(h["stars"]) if h["stars"] else -1.0
+        except ValueError:
+            stars_val = -1.0
+        return (stars_val >= 0, stars_val, h["_tag_count"])
+
+    candidates.sort(key=sort_key, reverse=True)
+    top = candidates[:TOP_N]
+
+    # фото только для финальных top N — не тратим лишние запросы к Wikidata
+    for h in top:
+        if h.get("wikidata"):
+            h["photo_url"] = _fetch_wikidata_image(h["wikidata"])
+        h.pop("wikidata", None)
+        h.pop("_tag_count", None)
+
+    return top
 
 
 def refresh_all_cities():
-    if not GOOGLE_PLACES_API_KEY:
-        log.error("GOOGLE_PLACES_API_KEY не задан — пропускаю обновление отелей.")
-        return
     log.info("Refreshing hotel cache for all cities...")
-    for key, query in CITIES.items():
+    for key in CITIES:
         try:
-            hotels = fetch_city_hotels(query)
+            hotels = fetch_city_hotels(key)
             save_hotels(key, hotels)
             log.info("  %s: %d hotels saved", key, len(hotels))
         except Exception as e:
@@ -241,31 +245,32 @@ def refresh_all_cities():
 # ---------------------------------------------------------------------------
 
 def format_hotel_card(idx: int, h: dict) -> str:
-    stars = "⭐" * round(h["rating"])
     name = html.escape(h["name"])
     address = html.escape(h["address"])
-    lines = [
-        f"{idx}. <b>{name}</b>",
-        f"{stars} {h['rating']} ({h['review_count']} отзывов) · {h['price_level']}",
-        f"📍 {address}",
-    ]
-    if h["review_snippets"]:
-        snippets = " / ".join(html.escape(s) for s in h["review_snippets"][:2])
-        lines.append(f"💬 {snippets}")
-    if h["maps_url"]:
-        lines.append(f'<a href="{html.escape(h["maps_url"])}">Открыть в Google Maps</a>')
+    lines = [f"{idx}. <b>{name}</b>"]
+    if h["stars"]:
+        try:
+            lines.append("⭐" * round(float(h["stars"])) + f" ({h['stars']} офиц. звёзд)")
+        except ValueError:
+            pass
+    lines.append(f"📍 {address}")
+    if h["phone"]:
+        lines.append(f"📞 {html.escape(h['phone'])}")
+    if h["website"]:
+        url = h["website"] if h["website"].startswith("http") else f"https://{h['website']}"
+        lines.append(f'🌐 <a href="{html.escape(url)}">Сайт отеля</a>')
+    lines.append(f'<a href="{html.escape(h["maps_url"])}">Открыть на карте</a>')
     return "\n".join(lines)
 
 
 async def show_city_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вызывается из главного меню sea-travel-bot по кнопке '🏨 Отели'."""
     keyboard = [
         [InlineKeyboardButton(label, callback_data=f"city:{key}")]
         for key, label in CITY_LABELS.items()
     ]
     await update.message.reply_text(
-        "Выбери город — пришлю топ отелей по рейтингу и живым отзывам "
-        "(данные обновляются раз в сутки):",
+        "Выбери город — пришлю подборку отелей (данные из OpenStreetMap, "
+        "без пользовательских отзывов — обновляется раз в сутки):",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -285,7 +290,7 @@ async def on_city_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     updated = last_updated(city_key)
     header = (
-        f"<b>{html.escape(CITY_LABELS[city_key])} — топ {len(hotels)} отелей</b>\n"
+        f"<b>{html.escape(CITY_LABELS[city_key])} — {len(hotels)} отелей</b>\n"
         f"<i>обновлено: {html.escape(updated or '—')}</i>\n"
     )
     await query.message.reply_text(header, parse_mode="HTML")
@@ -303,20 +308,12 @@ async def on_city_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def refresh_hotels_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not GOOGLE_PLACES_API_KEY:
-        await update.message.reply_text(
-            "GOOGLE_PLACES_API_KEY не задан в переменных окружения — добавь его в Railway Variables."
-        )
-        return
-    await update.message.reply_text("Обновляю данные по отелям, подожди ~30 сек...")
+    await update.message.reply_text("Обновляю данные по отелям, подожди ~20-40 сек...")
     await asyncio.to_thread(refresh_all_cities)
     await update.message.reply_text("Готово. Жми '🏨 Отели' чтобы посмотреть.")
 
 
 async def _startup_autofill(app: Application):
-    if not GOOGLE_PLACES_API_KEY:
-        log.warning("GOOGLE_PLACES_API_KEY не задан — модуль отелей не сможет обновлять данные.")
-        return
     empty_cities = [key for key in CITIES if not load_hotels(key)]
     if not empty_cities:
         log.info("Hotels cache already populated for all cities.")
@@ -335,7 +332,7 @@ def register(app: Application):
 
     Использование в bot.py:
         import hotels
-        app = Application.builder().token(BOT_TOKEN).post_init(hotels_and_news_startup).build()
+        app = Application.builder().token(BOT_TOKEN).build()
         hotels.register(app)
     """
     init_db()
@@ -347,4 +344,5 @@ def register(app: Application):
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(refresh_all_cities, "cron", hour=REFRESH_HOUR_UTC, minute=0)
     scheduler.start()
-    log.info("Hotels module registered. Daily refresh at %02d:00 UTC.", REFRESH_HOUR_UTC)
+    log.info("Hotels module (Overpass/OSM, no API key) registered. Daily refresh at %02d:00 UTC.",
+              REFRESH_HOUR_UTC)
