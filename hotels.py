@@ -41,9 +41,9 @@ REFRESH_HOUR_UTC = int(os.environ.get("HOTELS_REFRESH_HOUR_UTC", "20"))
 DB_PATH = os.environ.get("HOTELS_DB_PATH", "hotels.db")
 
 CITIES = {
-    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967},
-    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022},
-    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380},
+    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967, "query_name": "Nha Trang, Vietnam"},
+    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022, "query_name": "Da Nang, Vietnam"},
+    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380, "query_name": "Hoi An, Vietnam"},
 }
 CITY_LABELS = {k: v["label"] for k, v in CITIES.items()}
 
@@ -86,6 +86,13 @@ def init_db():
         )
         """
     )
+    # Миграция: в проде уже может существовать таблица со старой схемой
+    # (без booking_url/reviews_url) — CREATE TABLE IF NOT EXISTS её не тронет,
+    # поэтому добавляем недостающие колонки вручную.
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(hotels)").fetchall()}
+    for col in ("booking_url", "reviews_url"):
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE hotels ADD COLUMN {col} TEXT")
     conn.commit()
     conn.close()
 
@@ -98,11 +105,13 @@ def save_hotels(city_key: str, hotels: list[dict]):
         conn.execute(
             """
             INSERT INTO hotels
-            (city_key, osm_id, name, stars, address, website, phone, photo_url, maps_url, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (city_key, osm_id, name, stars, address, website, phone, photo_url,
+             maps_url, booking_url, reviews_url, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (city_key, h["osm_id"], h["name"], h["stars"], h["address"],
-             h["website"], h["phone"], h["photo_url"], h["maps_url"], now),
+             h["website"], h["phone"], h["photo_url"], h["maps_url"],
+             h["booking_url"], h["reviews_url"], now),
         )
     conn.commit()
     conn.close()
@@ -217,6 +226,13 @@ out center tags;
             f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(name + ' ' + address)}"
         )
 
+        # Ссылки на реальные отзывы — без API, просто конструируем поисковый
+        # запрос по названию + городу. Сам бот текст отзывов не показывает,
+        # но один тап переносит человека на страницу, где они реально есть.
+        search_term = urllib.parse.quote(f"{name} {city['query_name']}")
+        booking_url = f"https://www.booking.com/searchresults.html?ss={search_term}"
+        reviews_url = f"https://www.google.com/maps/search/?api=1&query={search_term}"
+
         candidates.append({
             "osm_id": f"{el['type']}/{el['id']}",
             "name": name,
@@ -226,6 +242,8 @@ out center tags;
             "phone": tags.get("phone") or tags.get("contact:phone"),
             "wikidata": tags.get("wikidata"),
             "maps_url": maps_url,
+            "booking_url": booking_url,
+            "reviews_url": reviews_url,
             "photo_url": None,
             "_tag_count": len(tags),
         })
@@ -286,6 +304,13 @@ def format_hotel_card(idx: int, h: dict) -> str:
         url = h["website"] if h["website"].startswith("http") else f"https://{h['website']}"
         lines.append(f'🌐 <a href="{html.escape(url)}">Сайт отеля</a>')
     lines.append(f'<a href="{html.escape(h["maps_url"])}">Открыть на карте</a>')
+    review_links = []
+    if h.get("reviews_url"):
+        review_links.append(f'<a href="{html.escape(h["reviews_url"])}">Google Maps</a>')
+    if h.get("booking_url"):
+        review_links.append(f'<a href="{html.escape(h["booking_url"])}">Booking.com</a>')
+    if review_links:
+        lines.append("📝 Читать отзывы: " + " · ".join(review_links))
     return "\n".join(lines)
 
 
