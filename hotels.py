@@ -29,6 +29,7 @@ import logging
 import sqlite3
 import urllib.parse
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -41,11 +42,18 @@ REFRESH_HOUR_UTC = int(os.environ.get("HOTELS_REFRESH_HOUR_UTC", "20"))
 DB_PATH = os.environ.get("HOTELS_DB_PATH", "hotels.db")
 
 CITIES = {
-    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967, "query_name": "Nha Trang, Vietnam"},
-    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022, "query_name": "Da Nang, Vietnam"},
-    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380, "query_name": "Hoi An, Vietnam"},
+    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967,
+                  "query_name": "Nha Trang, Vietnam", "tz": "Asia/Ho_Chi_Minh"},
+    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022,
+                "query_name": "Da Nang, Vietnam", "tz": "Asia/Ho_Chi_Minh"},
+    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380,
+               "query_name": "Hoi An, Vietnam", "tz": "Asia/Ho_Chi_Minh"},
 }
 CITY_LABELS = {k: v["label"] for k, v in CITIES.items()}
+
+
+def local_time_str(tz_name: str) -> str:
+    return datetime.now(ZoneInfo(tz_name)).strftime("%H:%M")
 
 SEARCH_RADIUS_M = 6000
 TOP_N = 10
@@ -316,8 +324,8 @@ def format_hotel_card(idx: int, h: dict) -> str:
 
 async def show_city_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton(label, callback_data=f"city:{key}")]
-        for key, label in CITY_LABELS.items()
+        [InlineKeyboardButton(f"{info['label']} · 🕐 {local_time_str(info['tz'])}", callback_data=f"city:{key}")]
+        for key, info in CITIES.items()
     ]
     await update.message.reply_text(
         "Выбери город — пришлю подборку отелей (данные из OpenStreetMap, "
@@ -342,6 +350,7 @@ async def on_city_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     updated = last_updated(city_key)
     header = (
         f"<b>{html.escape(CITY_LABELS[city_key])} — {len(hotels)} отелей</b>\n"
+        f"🕐 Сейчас там: {local_time_str(CITIES[city_key]['tz'])}\n"
         f"<i>обновлено: {html.escape(updated or '—')}</i>\n"
     )
     await query.message.reply_text(header, parse_mode="HTML")
