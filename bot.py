@@ -83,6 +83,62 @@ TIMEZONES = {
 }
 ALMATY_TZ = "Asia/Almaty"
 
+# Координаты для погоды — те же города, что в подборе отелей, плюс Бали и Сингапур
+WEATHER_LOCATIONS = {
+    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967},
+    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022},
+    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380},
+    "bali": {"label": "🌴 Бали (Денпасар)", "lat": -8.6500, "lon": 115.2167},
+    "singapore_w": {"label": "🇸🇬 Сингапур", "lat": 1.3521, "lon": 103.8198},
+}
+
+WEATHER_CODES = {
+    0: "☀️ Ясно", 1: "🌤 Малооблачно", 2: "⛅ Переменная облачность", 3: "☁️ Облачно",
+    45: "🌫 Туман", 48: "🌫 Изморозь",
+    51: "🌦 Морось", 53: "🌦 Морось", 55: "🌦 Морось",
+    61: "🌧 Дождь", 63: "🌧 Дождь", 65: "🌧 Сильный дождь",
+    80: "🌧 Ливень", 81: "🌧 Сильный ливень", 82: "⛈ Очень сильный ливень",
+    95: "⛈ Гроза", 96: "⛈ Гроза с градом", 99: "⛈ Сильная гроза с градом",
+}
+
+# ISO 3166-1 alpha-2 коды для Nager.Date — Сингапур может не поддерживаться,
+# обрабатываем это как обычный "нет данных", а не падение
+HOLIDAY_COUNTRY_CODES = {
+    "vietnam": "VN",
+    "indonesia": "ID",
+    "singapore": "SG",
+}
+
+# Официальные визовые порталы — проверено перед добавлением, не с агрегаторов.
+# Важно: для граждан Казахстана виза в Сингапур ОБЯЗАТЕЛЬНА (подтверждено
+# на официальном сайте ICA) — это не visa-free направление, в отличие от
+# распространённого заблуждения.
+VISA_LINKS = {
+    "vietnam": {
+        "label": "🇻🇳 Вьетнам",
+        "note": "Электронная виза (e-visa) доступна для всех стран, до 90 дней",
+        "url": "https://evisa.gov.vn",
+    },
+    "indonesia": {
+        "label": "🇮🇩 Индонезия",
+        "note": "e-VOA онлайн, 30 дней + одно продление на 30 дней",
+        "url": "https://evisa.imigrasi.go.id",
+    },
+    "singapore": {
+        "label": "🇸🇬 Сингапур",
+        "note": "⚠️ Для граждан Казахстана виза ОБЯЗАТЕЛЬНА — это не visa-free направление",
+        "url": "https://www.ica.gov.sg/enter-transit-depart/entering-singapore/visa_requirements/visa-detail-page/kazakhstan",
+    },
+}
+
+
+def fmt_visa_links() -> str:
+    lines = ["🔗 <b>Официальные визовые порталы</b>\n"]
+    for info in VISA_LINKS.values():
+        lines.append(f"{info['label']}\n{info['note']}\n<a href=\"{info['url']}\">Открыть официальный сайт</a>\n")
+    lines.append("<i>Требования меняются — сверяй актуальные условия прямо на портале перед подачей.</i>")
+    return "\n".join(lines)
+
 
 def local_time_str(tz_name: str) -> str:
     return datetime.now(ZoneInfo(tz_name)).strftime("%H:%M")
@@ -106,8 +162,9 @@ log = logging.getLogger(__name__)
 
 # ─── Перевод через бесплатный Google Translate ───────────────────────────────
 
-def translate_to_russian(text: str) -> str:
-    """Переводит текст на русский через бесплатный Google Translate API."""
+def translate_text(text: str, target_lang: str = "ru") -> str:
+    """Переводит текст через бесплатный (неофициальный) Google Translate endpoint.
+    target_lang — код языка назначения: 'ru', 'vi' (вьетнамский), 'id' (индонезийский) и т.д."""
     if not text or not text.strip():
         return text
     try:
@@ -115,7 +172,7 @@ def translate_to_russian(text: str) -> str:
         params = urllib.parse.urlencode({
             "client": "gtx",
             "sl": "auto",
-            "tl": "ru",
+            "tl": target_lang,
             "dt": "t",
             "q": text,
         })
@@ -131,6 +188,10 @@ def translate_to_russian(text: str) -> str:
     except Exception as e:
         log.warning(f"Перевод не удался: {e}")
         return text
+
+
+def translate_to_russian(text: str) -> str:
+    return translate_text(text, "ru")
 
 
 # ─── Хранилище данных ────────────────────────────────────────────────────────
@@ -329,6 +390,191 @@ def fmt_exchange(data: dict | None) -> str:
     return "\n".join(lines)
 
 
+# ─── Погода (Open-Meteo — без ключа) ─────────────────────────────────────────
+
+def fetch_weather(lat: float, lon: float) -> dict:
+    resp = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat, "longitude": lon,
+            "current": "temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m",
+            "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max",
+            "timezone": "auto",
+            "forecast_days": 3,
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def fetch_air_quality(lat: float, lon: float) -> dict | None:
+    try:
+        resp = requests.get(
+            "https://air-quality-api.open-meteo.com/v1/air-quality",
+            params={"latitude": lat, "longitude": lon, "current": "us_aqi"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        log.warning(f"Air quality fetch failed: {e}")
+        return None
+
+
+def _aqi_label(aqi: float) -> str:
+    if aqi <= 50:
+        return "хорошее"
+    if aqi <= 100:
+        return "умеренное"
+    if aqi <= 150:
+        return "вредно для чувствительных групп"
+    if aqi <= 200:
+        return "вредно"
+    return "очень вредно"
+
+
+def _uv_label(uv: float) -> str:
+    if uv < 3:
+        return "низкий"
+    if uv < 6:
+        return "умеренный"
+    if uv < 8:
+        return "высокий"
+    if uv < 11:
+        return "очень высокий"
+    return "экстремальный"
+
+
+def format_weather_block(label: str, data: dict | None, air: dict | None) -> str:
+    if data is None:
+        return f"<b>{label}</b>\n😕 Не удалось получить погоду"
+    cur = data.get("current", {})
+    daily = data.get("daily", {})
+    code = cur.get("weather_code")
+    desc = WEATHER_CODES.get(code, "🌡")
+    lines = [f"<b>{label}</b>"]
+
+    temp = cur.get("temperature_2m")
+    humidity = cur.get("relative_humidity_2m")
+    if temp is not None:
+        line = f"{desc} {temp:.0f}°C"
+        if humidity is not None:
+            line += f", влажность {humidity}%"
+        lines.append(line)
+    else:
+        lines.append(f"{desc} данные временно неполные")
+
+    wind = cur.get("wind_speed_10m")
+    if wind is not None:
+        lines.append(f"💨 Ветер {wind:.0f} км/ч")
+    if daily.get("temperature_2m_max"):
+        lo, hi = daily["temperature_2m_min"][0], daily["temperature_2m_max"][0]
+        rain = daily.get("precipitation_probability_max", [None])[0]
+        line = f"Сегодня: {lo:.0f}…{hi:.0f}°C"
+        if rain is not None:
+            line += f", вероятность дождя {rain}%"
+        lines.append(line)
+        uv = daily.get("uv_index_max", [None])[0]
+        if uv is not None:
+            lines.append(f"☀️ УФ-индекс: {uv:.0f} ({_uv_label(uv)})")
+    if air and air.get("current", {}).get("us_aqi") is not None:
+        aqi = air["current"]["us_aqi"]
+        lines.append(f"🌬 Качество воздуха: {aqi} — {_aqi_label(aqi)}")
+    return "\n".join(lines)
+
+
+def _weather_for_one(loc_key: str) -> str:
+    loc = WEATHER_LOCATIONS[loc_key]
+    try:
+        data = fetch_weather(loc["lat"], loc["lon"])
+    except Exception as e:
+        log.warning(f"Weather fetch failed for {loc_key}: {e}")
+        data = None
+    air = fetch_air_quality(loc["lat"], loc["lon"]) if data is not None else None
+    return format_weather_block(loc["label"], data, air)
+
+
+def fetch_all_weather_text() -> str:
+    with ThreadPoolExecutor(max_workers=len(WEATHER_LOCATIONS)) as pool:
+        blocks = list(pool.map(_weather_for_one, WEATHER_LOCATIONS.keys()))
+    return "🌤 <b>Погода</b>\n" + "─" * 28 + "\n\n" + "\n\n".join(blocks)
+
+
+# ─── Праздники и выходные дни (Nager.Date — без ключа) ───────────────────────
+
+def fetch_upcoming_holidays(country_code: str) -> list | None:
+    """None означает, что страна не поддерживается источником — не ошибка."""
+    try:
+        resp = requests.get(f"https://date.nager.at/api/v3/NextPublicHolidays/{country_code}", timeout=10)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        log.warning(f"Holidays fetch failed for {country_code}: {e}")
+        return None
+
+
+def format_holidays_block(label: str, holidays: list | None) -> str:
+    if holidays is None:
+        return f"<b>{label}</b>\n😕 Источник не покрывает эту страну"
+    if not holidays:
+        return f"<b>{label}</b>\nБлижайших праздников не найдено"
+    lines = [f"<b>{label}</b>"]
+    for h in holidays[:5]:
+        date_obj = datetime.strptime(h["date"], "%Y-%m-%d")
+        extra = f" ({h['name']})" if h.get("name") and h["name"] != h.get("localName") else ""
+        lines.append(f"📅 {date_obj.strftime('%d.%m.%Y')} — {h.get('localName', h.get('name'))}{extra}")
+    return "\n".join(lines)
+
+
+def fetch_all_holidays_text() -> str:
+    blocks = []
+    for key, code in HOLIDAY_COUNTRY_CODES.items():
+        holidays = fetch_upcoming_holidays(code)
+        blocks.append(format_holidays_block(COUNTRY_LABELS[key], holidays))
+    return "📅 <b>Ближайшие праздники и выходные дни</b>\n" + "─" * 28 + "\n\n" + "\n\n".join(blocks)
+
+
+# ─── Короткая сводка для утренней рассылки (погода одной строкой + курс) ─────
+
+def _short_weather_line(loc_key: str) -> str:
+    loc = WEATHER_LOCATIONS[loc_key]
+    try:
+        data = fetch_weather(loc["lat"], loc["lon"])
+        temp = data.get("current", {}).get("temperature_2m")
+        code = data.get("current", {}).get("weather_code")
+        if temp is not None:
+            return f"{loc['label']}: {WEATHER_CODES.get(code, '🌡')} {temp:.0f}°C"
+    except Exception as e:
+        log.warning(f"Short weather failed for {loc_key}: {e}")
+    return f"{loc['label']}: нет данных"
+
+
+def fetch_morning_addon_text() -> str:
+    """Компактный блок для ежедневного дайджеста — не дублирует полные
+    /🌤 Погода и /💱 Курс тенге, а даёт быструю сводку одним взглядом."""
+    with ThreadPoolExecutor(max_workers=len(WEATHER_LOCATIONS)) as pool:
+        weather_lines = list(pool.map(_short_weather_line, WEATHER_LOCATIONS.keys()))
+
+    parts = ["🌤 <b>Погода:</b>"] + weather_lines
+
+    rates = fetch_kzt_rates()
+    if rates and "kzt" in rates:
+        r = rates["kzt"]
+        parts.append("")
+        parts.append("💱 <b>1000 ₸ ≈</b>")
+        if r.get("vnd"):
+            parts.append(f"{1000 * r['vnd']:,.0f} VND".replace(",", " "))
+        if r.get("idr"):
+            parts.append(f"{1000 * r['idr']:,.0f} IDR".replace(",", " "))
+        if r.get("sgd"):
+            parts.append(f"{1000 * r['sgd']:.2f} SGD")
+
+    return "\n".join(parts)
+
+
 # ─── Команды ─────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -336,20 +582,20 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     reply_kb = ReplyKeyboardMarkup(
         [["🌴 Все новости", "🛂 Визы и правила"],
          ["🇻🇳 Вьетнам", "🇮🇩 Индонезия", "🇸🇬 Сингапур"],
-         ["🔔 Подписаться", "💱 Курс тенге"],
-         ["📍 Страны", "ℹ️ О боте"],
-         ["🏨 Отели"]],
+         ["🌤 Погода", "🏨 Отели"],
+         ["🧰 Ещё", "🔔 Подписаться"]],
         resize_keyboard=True,
         is_persistent=True,
     )
     await update.message.reply_text(
         f"Привет, {name}! 🌏\n\n"
         "Я слежу за новостями туризма по <b>Вьетнаму, Индонезии (Бали) и Сингапуру</b>.\n\n"
-        "🗓 Дайджест каждое утро в <b>10:00 по Алматы</b>\n"
+        "🗓 Дайджест каждое утро в <b>10:00 по Алматы</b> — новости + короткая сводка погоды и курса тенге\n"
         "🇷🇺 Все новости переводятся на русский язык\n"
         "🛂 Отдельно фильтрую визовые новости и изменения правил въезда\n"
-        "💱 Показываю курс тенге к донгу/рупии/сингапурскому доллару\n"
-        "🏨 А ещё подберу топ отелей в Нячанге, Дананге и Хойане\n\n"
+        "🌤 Погода и качество воздуха по городам\n"
+        "🏨 Подберу топ отелей в Нячанге, Дананге и Хойане\n"
+        "🧰 В кнопке «Ещё» — курс валют, праздники, визовые порталы и справка\n\n"
         "Кнопки внизу всегда под рукой 👇",
         parse_mode="HTML",
         reply_markup=reply_kb,
@@ -390,10 +636,10 @@ async def cmd_reply_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             mark_sent(n["hash"])
         await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
 
-    elif text == "💱 Курс тенге":
-        msg = await update.message.reply_text("⏳ Получаю курс валют...")
-        data = await asyncio.to_thread(fetch_kzt_rates)
-        await msg.edit_text(fmt_exchange(data), parse_mode="HTML")
+    elif text == "🌤 Погода":
+        msg = await update.message.reply_text("⏳ Собираю погоду по городам...")
+        weather_text = await asyncio.to_thread(fetch_all_weather_text)
+        await msg.edit_text(weather_text, parse_mode="HTML")
 
     elif text == "🔔 Подписаться":
         add_subscriber(chat_id)
@@ -402,21 +648,61 @@ async def cmd_reply_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    elif text == "📍 Страны":
-        await update.message.reply_text(countries_text(), parse_mode="HTML")
+    elif text == "🏨 Отели":
+        await hotels.show_city_menu(update, ctx)
 
-    elif text == "ℹ️ О боте":
-        await update.message.reply_text(
+    elif text == "🧰 Ещё":
+        await update.message.reply_text("🧰 Дополнительные функции:", reply_markup=TOOLS_MENU_KB)
+
+
+# ─── Инлайн-подменю "🧰 Ещё" ──────────────────────────────────────────────────
+# Отдельный хэндлер с паттерном ^tools_ — не пересекается ни с cb()
+# (get_news|subscribe|countries|about|back), ни с hotels.py (^city:)
+
+TOOLS_MENU_KB = InlineKeyboardMarkup([
+    [InlineKeyboardButton("💱 Курс тенге", callback_data="tools_exchange"),
+     InlineKeyboardButton("📅 Праздники", callback_data="tools_holidays")],
+    [InlineKeyboardButton("🔗 Визовые порталы", callback_data="tools_visalinks")],
+    [InlineKeyboardButton("📍 Страны", callback_data="tools_countries"),
+     InlineKeyboardButton("ℹ️ О боте", callback_data="tools_about")],
+])
+
+TOOLS_BACK_KB = InlineKeyboardMarkup([[InlineKeyboardButton("← Ещё функции", callback_data="tools_root")]])
+
+
+async def tools_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+
+    if q.data == "tools_root":
+        await q.edit_message_text("🧰 Дополнительные функции:", reply_markup=TOOLS_MENU_KB)
+
+    elif q.data == "tools_exchange":
+        await q.edit_message_text("⏳ Получаю курс валют...")
+        data = await asyncio.to_thread(fetch_kzt_rates)
+        await q.edit_message_text(fmt_exchange(data), parse_mode="HTML", reply_markup=TOOLS_BACK_KB)
+
+    elif q.data == "tools_holidays":
+        await q.edit_message_text("⏳ Проверяю ближайшие праздники...")
+        holidays_text = await asyncio.to_thread(fetch_all_holidays_text)
+        await q.edit_message_text(holidays_text, parse_mode="HTML", reply_markup=TOOLS_BACK_KB)
+
+    elif q.data == "tools_visalinks":
+        await q.edit_message_text(fmt_visa_links(), parse_mode="HTML",
+                                   disable_web_page_preview=True, reply_markup=TOOLS_BACK_KB)
+
+    elif q.data == "tools_countries":
+        await q.edit_message_text(countries_text(), parse_mode="HTML", reply_markup=TOOLS_BACK_KB)
+
+    elif q.data == "tools_about":
+        await q.edit_message_text(
             "🌴 <b>SEA Travel News Bot</b>\n\n"
             "Собирает новости о Вьетнаме, Индонезии (Бали) и Сингапуре, "
             "переводит на русский, удаляет дубли.\n\n"
-            "📅 Дайджест ежедневно в 10:00 по Алматы\n"
+            "📅 Дайджест ежедневно в 10:00 по Алматы (+ короткая сводка погоды и курса)\n"
             "🇷🇺 Автоперевод на русский\n🆓 Без рекламы",
-            parse_mode="HTML"
+            parse_mode="HTML", reply_markup=TOOLS_BACK_KB
         )
-
-    elif text == "🏨 Отели":
-        await hotels.show_city_menu(update, ctx)
 
 
 async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -447,8 +733,9 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "📖 <b>Команды</b>\n\n/start — главное меню\n/news — новости прямо сейчас\n"
         "/subscribe — подписаться\n/unsubscribe — отписаться\n/status — статус\n"
         "/refresh_hotels — обновить данные по отелям прямо сейчас\n/help — справка\n\n"
-        "Кнопками внизу можно фильтровать новости по стране, отдельно смотреть "
-        "визовые изменения (🛂), и проверить курс тенге (💱).",
+        "Кнопками внизу можно фильтровать новости по стране и визам (🛂), "
+        "смотреть погоду (🌤) и отели (🏨). В кнопке «🧰 Ещё» — курс тенге, "
+        "праздники, визовые порталы и справка о боте.",
         parse_mode="HTML"
     )
 
@@ -513,7 +800,8 @@ async def send_daily(app):
     news = await asyncio.to_thread(fetch_news)
     if not news:
         return
-    text = fmt_digest(news)
+    addon = await asyncio.to_thread(fetch_morning_addon_text)
+    text = fmt_digest(news) + "\n\n" + "─" * 28 + "\n\n" + addon
     for n in news:
         mark_sent(n["hash"])
     for uid in data["subscribers"]:
@@ -548,6 +836,7 @@ def main():
     app.add_handler(CallbackQueryHandler(
         cb, pattern=r"^(get_news|subscribe|countries|about|back)$"
     ))
+    app.add_handler(CallbackQueryHandler(tools_cb, pattern=r"^tools_"))
 
     from telegram.ext import MessageHandler, filters
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, cmd_reply_buttons))
