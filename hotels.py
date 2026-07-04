@@ -52,12 +52,20 @@ TOP_N = 10
 MAX_RETRIES_PER_MIRROR = 2
 RETRY_BACKOFF_SEC = 2
 
-# Несколько публичных зеркал Overpass — если одно лежит/тормозит, пробуем следующее
+# Несколько публичных зеркал Overpass — если одно лежит/тормозит, пробуем следующее.
+# overpass.openstreetmap.ru исключён: плохо доступен из дата-центров Railway (US),
+# судя по реальным логам продакшена — стабильно таймаутит.
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.openstreetmap.ru/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
 ]
+
+# Overpass API просит честно представляться в User-Agent (это часть их fair-use
+# политики) — без этого некоторые зеркала отвечают 406/понижают приоритет запроса.
+REQUEST_HEADERS = {
+    "User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder for personal use)"
+}
 
 TOURISM_TYPES = "hotel|guest_house|hostel|motel|apartment"
 
@@ -123,13 +131,26 @@ def last_updated(city_key: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def _query_overpass(query: str) -> dict:
-    """Пробует все зеркала по очереди, с retry внутри каждого."""
+    """Пробует все зеркала по очереди, с retry внутри каждого.
+
+    GET с query-параметром, а не POST — так задокументировано в примерах
+    самого Overpass API и меньше шансов на 406 от строгих зеркал.
+    Обязательно передаём свой User-Agent (см. REQUEST_HEADERS выше) и
+    уважаем заголовок Retry-After при 429, если он есть.
+    """
     last_exc = None
     for endpoint in OVERPASS_ENDPOINTS:
         for attempt in range(1, MAX_RETRIES_PER_MIRROR + 1):
             try:
-                resp = requests.post(endpoint, data={"data": query}, timeout=40)
-                if resp.status_code == 429 or resp.status_code >= 500:
+                resp = requests.get(
+                    endpoint, params={"data": query}, headers=REQUEST_HEADERS, timeout=45
+                )
+                if resp.status_code == 429:
+                    wait = int(resp.headers.get("Retry-After", RETRY_BACKOFF_SEC))
+                    log.warning("Overpass mirror %s rate-limited (429), waiting %ds", endpoint, wait)
+                    time.sleep(wait)
+                    continue
+                if resp.status_code >= 500:
                     raise requests.HTTPError(f"{resp.status_code} from {endpoint}")
                 resp.raise_for_status()
                 return resp.json()
@@ -147,7 +168,7 @@ def _fetch_wikidata_image(qid: str) -> str | None:
     фото оттуда (Wikimedia Commons). Не критично, если не получится."""
     try:
         url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
-        resp = requests.get(url, timeout=15)
+        resp = requests.get(url, headers=REQUEST_HEADERS, timeout=15)
         resp.raise_for_status()
         entity = resp.json()["entities"][qid]
         p18 = entity.get("claims", {}).get("P18")
