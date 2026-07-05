@@ -69,7 +69,7 @@ COUNTRY_KEYWORDS = {
 }
 COUNTRY_LABELS = {
     "vietnam": "🇻🇳 Вьетнам",
-    "indonesia": "🇮🇩 Индонезия/",
+    "indonesia": "🇮🇩 Индонезия",
     "singapore": "🇸🇬 Сингапур",
 }
 
