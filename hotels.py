@@ -421,6 +421,32 @@ async def show_city_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def show_city_menu_via_query(query, city_keys: list[str]):
+    """Показ выбора города из заданного подмножества (для меню страны).
+    Вызывается из bot.py, когда у страны несколько отельных городов."""
+    keyboard = [
+        [InlineKeyboardButton(f"{CITIES[key]['label']} · 🕐 {local_time_str(CITIES[key]['tz'])}",
+                              callback_data=f"city:{key}")]
+        for key in city_keys if key in CITIES
+    ]
+    await query.edit_message_text(
+        "Выбери город — пришлю подборку отелей (данные из OpenStreetMap, "
+        "без пользовательских отзывов):",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def send_city_hotels_via_query(query, city_key: str):
+    """Сразу показать отели одного города (для стран с единственной
+    отельной локацией — Бали, Сингапур). Убираем инлайн-меню страны и
+    шлём первую страницу отелей новыми сообщениями."""
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await _send_hotel_page(query.message, city_key, offset=0)
+
+
 async def on_city_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
