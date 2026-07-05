@@ -12,7 +12,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -138,6 +137,80 @@ def fmt_visa_links() -> str:
         lines.append(f"{info['label']}\n{info['note']}\n<a href=\"{info['url']}\">Открыть официальный сайт</a>\n")
     lines.append("<i>Требования меняются — сверяй актуальные условия прямо на портале перед подачей.</i>")
     return "\n".join(lines)
+
+
+# Какие "отельные" города (ключи из hotels.CITIES) относятся к какой стране —
+# для навигации Страна → Отели. Вьетнам ведёт к выбору из 3 городов,
+# Индонезия сразу к Бали, Сингапур сразу к Сингапуру.
+COUNTRY_HOTEL_CITIES = {
+    "vietnam": ["nha_trang", "da_nang", "hoi_an"],
+    "indonesia": ["bali"],
+    "singapore": ["singapore"],
+}
+
+# Какие погодные локации (ключи WEATHER_LOCATIONS) относятся к какой стране
+COUNTRY_WEATHER_KEYS = {
+    "vietnam": ["nha_trang", "da_nang", "hoi_an"],
+    "indonesia": ["bali"],
+    "singapore": ["singapore_w"],
+}
+
+# Короткое имя страны без флага — для заголовков
+COUNTRY_SHORT = {
+    "vietnam": "Вьетнам",
+    "indonesia": "Индонезия (Бали)",
+    "singapore": "Сингапур",
+}
+
+
+def country_hub_text(country_key: str) -> str:
+    """Заголовок странички страны с текущим временем."""
+    tz = TIMEZONES[country_key]
+    return (
+        f"{COUNTRY_LABELS[country_key]}\n"
+        f"🕐 Местное время: <b>{local_time_str(tz)}</b> "
+        f"(у тебя в Алматы {local_time_str(ALMATY_TZ)})\n\n"
+        "Что показать?"
+    )
+
+
+def country_hub_kb(country_key: str):
+    """Инлайн-меню внутри страны."""
+    rows = [
+        [InlineKeyboardButton("📰 Новости", callback_data=f"c_news:{country_key}"),
+         InlineKeyboardButton("🌤 Погода", callback_data=f"c_weather:{country_key}")],
+        [InlineKeyboardButton("🛂 Виза", callback_data=f"c_visa:{country_key}"),
+         InlineKeyboardButton("📅 Праздники", callback_data=f"c_holidays:{country_key}")],
+        [InlineKeyboardButton("🏨 Отели", callback_data=f"c_hotels:{country_key}")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+def country_back_kb(country_key: str):
+    return InlineKeyboardMarkup([[InlineKeyboardButton("← Назад к стране", callback_data=f"c_hub:{country_key}")]])
+
+
+def fmt_single_visa(country_key: str) -> str:
+    info = VISA_LINKS[country_key]
+    return (
+        f"🛂 <b>Виза — {info['label']}</b>\n\n"
+        f"{info['note']}\n\n"
+        f"<a href=\"{info['url']}\">Открыть официальный портал</a>\n\n"
+        "<i>Требования меняются — сверяй актуальные условия на портале перед подачей.</i>"
+    )
+
+
+def fmt_country_weather(country_key: str) -> str:
+    keys = COUNTRY_WEATHER_KEYS[country_key]
+    with ThreadPoolExecutor(max_workers=max(len(keys), 1)) as pool:
+        blocks = list(pool.map(_weather_for_one, keys))
+    return f"🌤 <b>Погода — {COUNTRY_SHORT[country_key]}</b>\n" + "─" * 28 + "\n\n" + "\n\n".join(blocks)
+
+
+def fmt_country_holidays(country_key: str) -> str:
+    code = HOLIDAY_COUNTRY_CODES[country_key]
+    holidays = fetch_upcoming_holidays(code)
+    return "📅 <b>Ближайшие праздники</b>\n\n" + format_holidays_block(COUNTRY_LABELS[country_key], holidays)
 
 
 def local_time_str(tz_name: str) -> str:
@@ -580,22 +653,20 @@ def fetch_morning_addon_text() -> str:
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name or "Путешественник"
     reply_kb = ReplyKeyboardMarkup(
-        [["🌴 Все новости", "🛂 Визы и правила"],
-         ["🇻🇳 Вьетнам", "🇮🇩 Индонезия", "🇸🇬 Сингапур"],
-         ["🌤 Погода", "🏨 Отели"],
+        [["🇻🇳 Вьетнам", "🇮🇩 Индонезия", "🇸🇬 Сингапур"],
+         ["🌴 Все новости", "🛂 Все визы"],
          ["🧰 Ещё", "🔔 Подписаться"]],
         resize_keyboard=True,
         is_persistent=True,
     )
     await update.message.reply_text(
         f"Привет, {name}! 🌏\n\n"
-        "Я слежу за новостями туризма по <b>Вьетнаму, Индонезии (Бали) и Сингапуру</b>.\n\n"
-        "🗓 Дайджест каждое утро в <b>10:00 по Алматы</b> — новости + короткая сводка погоды и курса тенге\n"
-        "🇷🇺 Все новости переводятся на русский язык\n"
-        "🛂 Отдельно фильтрую визовые новости и изменения правил въезда\n"
-        "🌤 Погода и качество воздуха по городам\n"
-        "🏨 Подберу топ отелей в Нячанге, Дананге и Хойане\n"
-        "🧰 В кнопке «Ещё» — курс валют, праздники, визовые порталы и справка\n\n"
+        "Выбери страну — внутри будут её <b>новости, погода, виза, отели и время</b>:\n\n"
+        "🇻🇳 <b>Вьетнам</b> — Нячанг, Дананг, Хойан и др.\n"
+        "🇮🇩 <b>Индонезия</b> — Бали\n"
+        "🇸🇬 <b>Сингапур</b>\n\n"
+        "🗓 Дайджест каждое утро в <b>10:00 по Алматы</b> — новости + сводка погоды и курса тенге\n"
+        "🧰 В кнопке «Ещё» — курс валют, праздники, визовые порталы, справка\n\n"
         "Кнопки внизу всегда под рукой 👇",
         parse_mode="HTML",
         reply_markup=reply_kb,
@@ -621,25 +692,15 @@ async def cmd_reply_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             mark_sent(n["hash"])
         await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
 
-    elif text == "🛂 Визы и правила":
-        msg = await update.message.reply_text("⏳ Ищу визовые новости и изменения правил въезда...")
-        news = await asyncio.to_thread(fetch_news, MAX_NEWS, VISA_KEYWORDS)
-        for n in news:
-            mark_sent(n["hash"])
-        await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
+    elif text == "🛂 Все визы":
+        await update.message.reply_text(fmt_visa_links(), parse_mode="HTML", disable_web_page_preview=True)
 
     elif text in COUNTRY_LABELS.values():
         country_key = next(k for k, v in COUNTRY_LABELS.items() if v == text)
-        msg = await update.message.reply_text(f"⏳ Собираю новости — {text}...")
-        news = await asyncio.to_thread(fetch_news, MAX_NEWS, COUNTRY_KEYWORDS[country_key])
-        for n in news:
-            mark_sent(n["hash"])
-        await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
-
-    elif text == "🌤 Погода":
-        msg = await update.message.reply_text("⏳ Собираю погоду по городам...")
-        weather_text = await asyncio.to_thread(fetch_all_weather_text)
-        await msg.edit_text(weather_text, parse_mode="HTML")
+        await update.message.reply_text(
+            country_hub_text(country_key), parse_mode="HTML",
+            reply_markup=country_hub_kb(country_key),
+        )
 
     elif text == "🔔 Подписаться":
         add_subscriber(chat_id)
@@ -648,11 +709,54 @@ async def cmd_reply_buttons(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
 
-    elif text == "🏨 Отели":
-        await hotels.show_city_menu(update, ctx)
-
     elif text == "🧰 Ещё":
         await update.message.reply_text("🧰 Дополнительные функции:", reply_markup=TOOLS_MENU_KB)
+
+
+# ─── Инлайн-меню внутри страны ────────────────────────────────────────────────
+# Паттерн ^c_ — не пересекается с cb() (get_news|...), tools_, city:/more: из hotels
+
+async def country_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    await q.answer()
+    action, country_key = q.data.split(":", 1)
+
+    if action == "c_hub":
+        await q.edit_message_text(
+            country_hub_text(country_key), parse_mode="HTML",
+            reply_markup=country_hub_kb(country_key),
+        )
+
+    elif action == "c_news":
+        await q.edit_message_text(f"⏳ Собираю новости — {COUNTRY_SHORT[country_key]}...")
+        news = await asyncio.to_thread(fetch_news, MAX_NEWS, COUNTRY_KEYWORDS[country_key])
+        for n in news:
+            mark_sent(n["hash"])
+        await q.edit_message_text(fmt_digest(news), parse_mode="HTML",
+                                   disable_web_page_preview=True, reply_markup=country_back_kb(country_key))
+
+    elif action == "c_weather":
+        await q.edit_message_text("⏳ Собираю погоду...")
+        weather_text = await asyncio.to_thread(fmt_country_weather, country_key)
+        await q.edit_message_text(weather_text, parse_mode="HTML", reply_markup=country_back_kb(country_key))
+
+    elif action == "c_visa":
+        await q.edit_message_text(fmt_single_visa(country_key), parse_mode="HTML",
+                                   disable_web_page_preview=True, reply_markup=country_back_kb(country_key))
+
+    elif action == "c_holidays":
+        await q.edit_message_text("⏳ Проверяю праздники...")
+        holidays_text = await asyncio.to_thread(fmt_country_holidays, country_key)
+        await q.edit_message_text(holidays_text, parse_mode="HTML", reply_markup=country_back_kb(country_key))
+
+    elif action == "c_hotels":
+        city_keys = COUNTRY_HOTEL_CITIES[country_key]
+        if len(city_keys) == 1:
+            # одна отельная локация (Бали, Сингапур) — сразу показываем отели
+            await hotels.send_city_hotels_via_query(q, city_keys[0])
+        else:
+            # несколько городов (Вьетнам) — показываем выбор города
+            await hotels.show_city_menu_via_query(q, city_keys)
 
 
 # ─── Инлайн-подменю "🧰 Ещё" ──────────────────────────────────────────────────
@@ -730,11 +834,11 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📖 <b>Команды</b>\n\n/start — главное меню\n/news — новости прямо сейчас\n"
+        "📖 <b>Команды</b>\n\n/start — главное меню\n/news — все новости прямо сейчас\n"
         "/subscribe — подписаться\n/unsubscribe — отписаться\n/status — статус\n"
-        "/refresh_hotels — обновить данные по отелям прямо сейчас\n/help — справка\n\n"
-        "Кнопками внизу можно фильтровать новости по стране и визам (🛂), "
-        "смотреть погоду (🌤) и отели (🏨). В кнопке «🧰 Ещё» — курс тенге, "
+        "/refresh_hotels — обновить данные по отелям\n/help — справка\n\n"
+        "Выбери страну (🇻🇳/🇮🇩/🇸🇬) — внутри её новости, погода, виза, отели и время. "
+        "«🌴 Все новости» — сводка по всем странам. В «🧰 Ещё» — курс тенге, "
         "праздники, визовые порталы и справка о боте.",
         parse_mode="HTML"
     )
@@ -814,6 +918,11 @@ async def send_daily(app):
 
 # ─── Запуск ──────────────────────────────────────────────────────────────────
 
+async def _daily_job(context):
+    """Колбэк для job_queue.run_daily — сигнатура (context), а не (app)."""
+    await send_daily(context.application)
+
+
 async def _post_init(app: Application):
     """post_init для Application: автозаполнение кэша отелей при старте,
     если он пуст (первый запуск / после редеплоя на Railway)."""
@@ -836,6 +945,7 @@ def main():
     app.add_handler(CallbackQueryHandler(
         cb, pattern=r"^(get_news|subscribe|countries|about|back)$"
     ))
+    app.add_handler(CallbackQueryHandler(country_cb, pattern=r"^c_"))
     app.add_handler(CallbackQueryHandler(tools_cb, pattern=r"^tools_"))
 
     from telegram.ext import MessageHandler, filters
@@ -843,12 +953,20 @@ def main():
 
     hotels.register(app)  # добавляет /refresh_hotels, CallbackQueryHandler("^city:"), суточный cron
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(lambda: asyncio.create_task(send_daily(app)),
-                       trigger="cron", hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC)
-    scheduler.start()
+    # Ежедневная рассылка через встроенный job_queue PTB — он работает в том же
+    # event loop, что и бот. Прежний вариант (AsyncIOScheduler + asyncio.create_task
+    # в лямбде) молча не срабатывал: планировщик стартовал до запуска loop, и
+    # create_task не попадал в нужный event loop. Это и была причина, почему
+    # дайджест в 10:00 не приходил.
+    from datetime import time as dtime, timezone as dtz
+    app.job_queue.run_daily(
+        _daily_job,
+        time=dtime(hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC, tzinfo=dtz.utc),
+        name="daily_digest",
+    )
 
-    log.info("🌴 SEA Travel News Bot (+ 🏨 Отели) запущен!")
+    log.info("🌴 SEA Travel News Bot (+ 🏨 Отели) запущен! Рассылка в %02d:%02d UTC.",
+              SCHEDULE_HOUR_UTC, SCHEDULE_MINUTE_UTC)
     app.run_polling(drop_pending_updates=True)
 
 
