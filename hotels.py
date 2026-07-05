@@ -41,13 +41,34 @@ log = logging.getLogger("hotels")
 REFRESH_HOUR_UTC = int(os.environ.get("HOTELS_REFRESH_HOUR_UTC", "20"))
 DB_PATH = os.environ.get("HOTELS_DB_PATH", "hotels.db")
 
+# Каждый город — список зон поиска (точка + радиус). Для компактных
+# вьетнамских городов одна зона; для разбросанных курортов Бали — несколько,
+# для Сингапура — одна точка с большим радиусом (весь остров).
 CITIES = {
-    "nha_trang": {"label": "🏖 Нячанг", "lat": 12.2388, "lon": 109.1967,
-                  "query_name": "Nha Trang, Vietnam", "tz": "Asia/Ho_Chi_Minh"},
-    "da_nang": {"label": "🌉 Дананг", "lat": 16.0544, "lon": 108.2022,
-                "query_name": "Da Nang, Vietnam", "tz": "Asia/Ho_Chi_Minh"},
-    "hoi_an": {"label": "🏮 Хойан", "lat": 15.8801, "lon": 108.3380,
-               "query_name": "Hoi An, Vietnam", "tz": "Asia/Ho_Chi_Minh"},
+    "nha_trang": {
+        "label": "🏖 Нячанг", "query_name": "Nha Trang, Vietnam", "tz": "Asia/Ho_Chi_Minh",
+        "zones": [{"lat": 12.2388, "lon": 109.1967, "radius": 6000}],
+    },
+    "da_nang": {
+        "label": "🌉 Дананг", "query_name": "Da Nang, Vietnam", "tz": "Asia/Ho_Chi_Minh",
+        "zones": [{"lat": 16.0544, "lon": 108.2022, "radius": 6000}],
+    },
+    "hoi_an": {
+        "label": "🏮 Хойан", "query_name": "Hoi An, Vietnam", "tz": "Asia/Ho_Chi_Minh",
+        "zones": [{"lat": 15.8801, "lon": 108.3380, "radius": 6000}],
+    },
+    "bali": {
+        "label": "🌴 Бали", "query_name": "Bali, Indonesia", "tz": "Asia/Makassar",
+        "zones": [
+            {"lat": -8.7180, "lon": 115.1686, "radius": 6000},   # Кута / Семиньяк / Легиан
+            {"lat": -8.5069, "lon": 115.2625, "radius": 6000},   # Убуд
+            {"lat": -8.7967, "lon": 115.2317, "radius": 6000},   # Нуса-Дуа
+        ],
+    },
+    "singapore": {
+        "label": "🇸🇬 Сингапур", "query_name": "Singapore", "tz": "Asia/Singapore",
+        "zones": [{"lat": 1.3000, "lon": 103.8300, "radius": 18000}],  # весь остров одной точкой
+    },
 }
 CITY_LABELS = {k: v["label"] for k, v in CITIES.items()}
 
@@ -55,8 +76,8 @@ CITY_LABELS = {k: v["label"] for k, v in CITIES.items()}
 def local_time_str(tz_name: str) -> str:
     return datetime.now(ZoneInfo(tz_name)).strftime("%H:%M")
 
-SEARCH_RADIUS_M = 6000
-TOP_N = 10
+PAGE_SIZE = 10       # сколько отелей показываем за один экран
+MAX_CACHE = 30       # сколько всего храним на город (3 страницы)
 MAX_RETRIES_PER_MIRROR = 2
 RETRY_BACKOFF_SEC = 2
 
@@ -125,15 +146,22 @@ def save_hotels(city_key: str, hotels: list[dict]):
     conn.close()
 
 
-def load_hotels(city_key: str) -> list[dict]:
+def load_hotels(city_key: str, offset: int = 0, limit: int = PAGE_SIZE) -> list[dict]:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT * FROM hotels WHERE city_key = ? ORDER BY rowid LIMIT ?",
-        (city_key, TOP_N),
+        "SELECT * FROM hotels WHERE city_key = ? ORDER BY rowid LIMIT ? OFFSET ?",
+        (city_key, limit, offset),
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def count_hotels(city_key: str) -> int:
+    conn = sqlite3.connect(DB_PATH)
+    n = conn.execute("SELECT COUNT(*) FROM hotels WHERE city_key = ?", (city_key,)).fetchone()[0]
+    conn.close()
+    return n
 
 
 def last_updated(city_key: str) -> str | None:
@@ -199,24 +227,18 @@ def _fetch_wikidata_image(qid: str) -> str | None:
         return None
 
 
-def fetch_city_hotels(city_key: str) -> list[dict]:
-    city = CITIES[city_key]
-    query = f"""
-[out:json][timeout:30];
-(
-  node["tourism"~"^({TOURISM_TYPES})$"](around:{SEARCH_RADIUS_M},{city['lat']},{city['lon']});
-  way["tourism"~"^({TOURISM_TYPES})$"](around:{SEARCH_RADIUS_M},{city['lat']},{city['lon']});
-);
-out center tags;
-"""
-    data = _query_overpass(query)
-    elements = data.get("elements", [])
-
-    candidates = []
+def _parse_elements(elements: list, city: dict) -> dict:
+    """Разбирает ответ Overpass в dict {osm_id: hotel}. Возврат словарём —
+    чтобы при объединении нескольких зон дубли схлопывались по ключу."""
+    result = {}
     for el in elements:
         tags = el.get("tags", {})
         name = tags.get("name")
         if not name:
+            continue
+
+        osm_id = f"{el['type']}/{el['id']}"
+        if osm_id in result:
             continue
 
         lat = el.get("lat") or el.get("center", {}).get("lat")
@@ -233,16 +255,10 @@ out center tags;
             if lat and lon else
             f"https://www.google.com/maps/search/?api=1&query={urllib.parse.quote(name + ' ' + address)}"
         )
-
-        # Ссылки на реальные отзывы — без API, просто конструируем поисковый
-        # запрос по названию + городу. Сам бот текст отзывов не показывает,
-        # но один тап переносит человека на страницу, где они реально есть.
         search_term = urllib.parse.quote(f"{name} {city['query_name']}")
-        booking_url = f"https://www.booking.com/searchresults.html?ss={search_term}"
-        reviews_url = f"https://www.google.com/maps/search/?api=1&query={search_term}"
 
-        candidates.append({
-            "osm_id": f"{el['type']}/{el['id']}",
+        result[osm_id] = {
+            "osm_id": osm_id,
             "name": name,
             "stars": tags.get("stars"),
             "address": address,
@@ -250,11 +266,39 @@ out center tags;
             "phone": tags.get("phone") or tags.get("contact:phone"),
             "wikidata": tags.get("wikidata"),
             "maps_url": maps_url,
-            "booking_url": booking_url,
-            "reviews_url": reviews_url,
+            "booking_url": f"https://www.booking.com/searchresults.html?ss={search_term}",
+            "reviews_url": f"https://www.google.com/maps/search/?api=1&query={search_term}",
             "photo_url": None,
             "_tag_count": len(tags),
-        })
+        }
+    return result
+
+
+def fetch_city_hotels(city_key: str) -> list[dict]:
+    city = CITIES[city_key]
+    merged = {}
+
+    # По зоне на запрос. Для Вьетнама зона одна, для Бали — три, для
+    # Сингапура одна большая. Между зонами пауза, чтобы не ловить 429.
+    for i, zone in enumerate(city["zones"]):
+        query = f"""
+[out:json][timeout:30];
+(
+  node["tourism"~"^({TOURISM_TYPES})$"](around:{zone['radius']},{zone['lat']},{zone['lon']});
+  way["tourism"~"^({TOURISM_TYPES})$"](around:{zone['radius']},{zone['lat']},{zone['lon']});
+);
+out center tags;
+"""
+        try:
+            data = _query_overpass(query)
+            zone_hotels = _parse_elements(data.get("elements", []), city)
+            merged.update(zone_hotels)  # дедуп по osm_id между зонами
+        except Exception as e:
+            log.error("  %s zone %d fetch failed: %s", city_key, i, e)
+        if i < len(city["zones"]) - 1:
+            time.sleep(5)
+
+    candidates = list(merged.values())
 
     def sort_key(h):
         try:
@@ -264,9 +308,9 @@ out center tags;
         return (stars_val >= 0, stars_val, h["_tag_count"])
 
     candidates.sort(key=sort_key, reverse=True)
-    top = candidates[:TOP_N]
+    top = candidates[:MAX_CACHE]
 
-    # фото только для финальных top N — не тратим лишние запросы к Wikidata
+    # фото только для попавших в кэш — не тратим лишние запросы к Wikidata
     for h in top:
         if h.get("wikidata"):
             h["photo_url"] = _fetch_wikidata_image(h["wikidata"])
@@ -322,6 +366,49 @@ def format_hotel_card(idx: int, h: dict) -> str:
     return "\n".join(lines)
 
 
+async def _send_hotel_page(message, city_key: str, offset: int):
+    """Отправляет одну страницу отелей (PAGE_SIZE штук) начиная с offset.
+    В конце — кнопка 'Показать ещё', если остались отели."""
+    hotels = load_hotels(city_key, offset=offset, limit=PAGE_SIZE)
+    total = count_hotels(city_key)
+
+    if not hotels:
+        await message.reply_text(
+            "Кэш ещё не заполнен для этого города — бот заполняет его автоматически "
+            "при старте. Если прошло больше пары минут, вызови /refresh_hotels."
+        )
+        return
+
+    # Шапку показываем только на первой странице
+    if offset == 0:
+        updated = last_updated(city_key)
+        header = (
+            f"<b>{html.escape(CITY_LABELS[city_key])} — {total} отелей</b>\n"
+            f"🕐 Сейчас там: {local_time_str(CITIES[city_key]['tz'])}\n"
+            f"<i>обновлено: {html.escape(updated or '—')}</i>\n"
+        )
+        await message.reply_text(header, parse_mode="HTML")
+
+    for i, h in enumerate(hotels, start=offset + 1):
+        text = format_hotel_card(i, h)
+        try:
+            if h["photo_url"]:
+                await message.reply_photo(photo=h["photo_url"], caption=text, parse_mode="HTML")
+            else:
+                await message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+        except Exception as e:
+            log.warning("Failed to send hotel card for %s: %s", h["name"], e)
+            await message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+
+    next_offset = offset + PAGE_SIZE
+    if next_offset < total:
+        remaining = total - next_offset
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton(f"⬇️ Показать ещё ({remaining})", callback_data=f"more:{city_key}:{next_offset}")
+        ]])
+        await message.reply_text(f"Показано {next_offset} из {total}.", reply_markup=kb)
+
+
 async def show_city_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton(f"{info['label']} · 🕐 {local_time_str(info['tz'])}", callback_data=f"city:{key}")]
@@ -338,33 +425,20 @@ async def on_city_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     city_key = query.data.split(":", 1)[1]
-    hotels = load_hotels(city_key)
+    await _send_hotel_page(query.message, city_key, offset=0)
 
-    if not hotels:
-        await query.message.reply_text(
-            "Кэш ещё не заполнен для этого города — бот заполняет его автоматически "
-            "при старте. Если прошло больше пары минут, вызови /refresh_hotels."
-        )
-        return
 
-    updated = last_updated(city_key)
-    header = (
-        f"<b>{html.escape(CITY_LABELS[city_key])} — {len(hotels)} отелей</b>\n"
-        f"🕐 Сейчас там: {local_time_str(CITIES[city_key]['tz'])}\n"
-        f"<i>обновлено: {html.escape(updated or '—')}</i>\n"
-    )
-    await query.message.reply_text(header, parse_mode="HTML")
-
-    for i, h in enumerate(hotels, start=1):
-        text = format_hotel_card(i, h)
-        try:
-            if h["photo_url"]:
-                await query.message.reply_photo(photo=h["photo_url"], caption=text, parse_mode="HTML")
-            else:
-                await query.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
-        except Exception as e:
-            log.warning("Failed to send hotel card for %s: %s", h["name"], e)
-            await query.message.reply_text(text, parse_mode="HTML", disable_web_page_preview=True)
+async def on_more_hotels(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    # формат callback_data: more:<city_key>:<offset>
+    _, city_key, offset_str = query.data.split(":", 2)
+    # убираем кнопку "Показать ещё" у предыдущего сообщения, чтобы не жали повторно
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await _send_hotel_page(query.message, city_key, offset=int(offset_str))
 
 
 async def refresh_hotels_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -397,9 +471,10 @@ def register(app: Application):
     """
     init_db()
     app.add_handler(CommandHandler("refresh_hotels", refresh_hotels_cmd))
-    # узкий паттерн — не пересекается с CallbackQueryHandler(cb) в bot.py,
-    # который слушает get_news/subscribe/countries/about/back
+    # узкие паттерны — не пересекаются с CallbackQueryHandler(cb) в bot.py
+    # (get_news/subscribe/countries/about/back) и tools_ подменю
     app.add_handler(CallbackQueryHandler(on_city_selected, pattern=r"^city:"))
+    app.add_handler(CallbackQueryHandler(on_more_hotels, pattern=r"^more:"))
 
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(refresh_all_cities, "cron", hour=REFRESH_HOUR_UTC, minute=0)
