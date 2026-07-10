@@ -9,6 +9,7 @@ import urllib.parse
 import re
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -35,6 +36,7 @@ RSS_FEEDS = [
     {"name": "AsiaOne Travel", "url": "https://www.asiaone.com/rss/travel.xml", "flag": "✈️", "country": "sg"},
     {"name": "TTR Weekly",     "url": "https://www.ttrweekly.com/site/feed/", "flag": "📰", "country": "all"},
     {"name": "Australian Traveller", "url": "https://www.australiantraveller.com/feed/", "flag": "🇦🇺", "country": "au"},
+    {"name": "Egypt Independent", "url": "https://egyptindependent.com/feed/", "flag": "🇪🇬", "country": "eg"},
 ]
 
 COUNTRY_KEYWORDS = {
@@ -42,8 +44,24 @@ COUNTRY_KEYWORDS = {
     "id": ["indonesia","bali","jakarta","lombok","komodo","ubud","denpasar","seminyak","canggu","yogyakarta","java"],
     "sg": ["singapore","sentosa","changi"],
     "au": ["australia","sydney","melbourne","brisbane","perth","adelaide","gold coast","cairns","great barrier reef","uluru","tasmania","canberra","outback"],
+    "eg": ["egypt","cairo","luxor","aswan","hurghada","sharm el sheikh","alexandria","giza","pyramids","red sea","nile"],
 }
-ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["au"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
+ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["au"] + COUNTRY_KEYWORDS["eg"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
+
+# Таймзоны для отображения локального времени под каждой страной
+TIMEZONES = {
+    "vn": "Asia/Ho_Chi_Minh",
+    "id": "Asia/Makassar",
+    "sg": "Asia/Singapore",
+    "au": "Australia/Sydney",
+    "eg": "Africa/Cairo",
+}
+
+def local_time_str(country_code: str) -> str:
+    tz = TIMEZONES.get(country_code)
+    if not tz:
+        return ""
+    return datetime.now(ZoneInfo(tz)).strftime("%H:%M")
 
 # ─── Статичные данные ─────────────────────────────────────────────────────────
 
@@ -87,6 +105,18 @@ VISA_INFO = {
         "• Стоимость: от AU$150\n"
         "• Срок рассмотрения: от 2 до 4+ недель — подавать заранее\n\n"
         "📄 Нужны: загранпаспорт, подтверждение финансовой состоятельности, бронь обратного билета"
+    ),
+    "eg": (
+        "🇪🇬 <b>Египет — условия въезда</b>\n\n"
+        "🟡 <b>Казахстан/Россия</b>: виза по прилёту <b>Visa on Arrival</b> или e-Visa заранее\n\n"
+        "📋 <b>Visa on Arrival</b>:\n"
+        "• Оплата наличными в аэропорту: $25\n"
+        "• Срок: 30 дней\n\n"
+        "🟢 <b>E-Visa</b> (оформить заранее):\n"
+        "• Сайт: visa2egypt.gov.eg\n"
+        "• Стоимость: $25 + сервисный сбор\n"
+        "• Срок оформления: 3-7 дней\n\n"
+        "📄 Нужен загранпаспорт, действующий минимум 6 месяцев"
     ),
 }
 
@@ -149,6 +179,19 @@ HOTELS_INFO = {
         "• Pullman Reef Hotel Casino (Cairns) ⭐⭐⭐⭐⭐\n\n"
         "🔍 Бронирование: booking.com / agoda.com"
     ),
+    "eg": (
+        "🇪🇬 <b>Отели Египта</b>\n\n"
+        "🏖 <b>Хургада</b>\n"
+        "• Steigenberger Al Dau Beach ⭐⭐⭐⭐⭐\n"
+        "• Baron Palace Sahl Hasheesh ⭐⭐⭐⭐⭐\n\n"
+        "🤿 <b>Шарм-эль-Шейх</b>\n"
+        "• Rixos Sharm El Sheikh ⭐⭐⭐⭐⭐\n"
+        "• Four Seasons Sharm El Sheikh ⭐⭐⭐⭐⭐\n\n"
+        "🏛 <b>Каир</b>\n"
+        "• Four Seasons Cairo at Nile Plaza ⭐⭐⭐⭐⭐\n"
+        "• Kempinski Nile Hotel ⭐⭐⭐⭐⭐\n\n"
+        "🔍 Бронирование: booking.com / agoda.com"
+    ),
 }
 
 FLIGHTS_INFO = (
@@ -168,6 +211,9 @@ FLIGHTS_INFO = (
     "🇦🇺 <b>Алматы → Австралия (SYD/MEL)</b>\n"
     "• Прямых рейсов нет, обычно через Дубай, Сингапур или Гуанчжоу\n"
     "• В среднем: от $900–1400 туда-обратно\n\n"
+    "🇪🇬 <b>Алматы → Египет (HRG/SSH)</b>\n"
+    "• Чартерные и прямые рейсы в Хургаду и Шарм-эль-Шейх (сезонно)\n"
+    "• В среднем: от $500–800 туда-обратно\n\n"
     "🔍 Поиск билетов: aviasales.ru / skyscanner.com / google.com/flights"
 )
 
@@ -209,6 +255,7 @@ WEATHER_CITIES = {
     "id": [("Бали/Денпасар", -8.6705, 115.2126), ("Убуд", -8.5069, 115.2625), ("Ломбок", -8.6524, 116.3240)],
     "sg": [("Сингапур", 1.3521, 103.8198)],
     "au": [("Сидней", -33.8688, 151.2093), ("Мельбурн", -37.8136, 144.9631), ("Брисбен", -27.4698, 153.0251), ("Голд-Кост", -28.0167, 153.4000)],
+    "eg": [("Каир", 30.0444, 31.2357), ("Хургада", 27.2579, 33.8116), ("Шарм-эль-Шейх", 27.9158, 34.3300), ("Луксор", 25.6872, 32.6396)],
 }
 
 WEATHER_ICONS = {"0":"☀️","1":"🌤","2":"⛅","3":"☁️","45":"🌫","48":"🌫","51":"🌦","61":"🌧","71":"❄️","80":"🌦","95":"⛈"}
@@ -377,7 +424,7 @@ def fmt_digest(news_list, title="Дайджест — Вьетнам, Бали, 
 def main_kb():
     return ReplyKeyboardMarkup(
         [["🇻🇳 Вьетнам", "🇮🇩 Индонезия", "🇸🇬 Сингапур"],
-         ["🇦🇺 Австралия"],
+         ["🇦🇺 Австралия", "🇪🇬 Египет"],
          ["🌴 Все новости", "💱 Курс валют"],
          ["🔔 Подписаться", "ℹ️ О боте"]],
         resize_keyboard=True, is_persistent=True,
@@ -436,6 +483,7 @@ COUNTRY_MAP = {
     "🇮🇩 Индонезия": ("id", "Индонезия"),
     "🇸🇬 Сингапур": ("sg", "Сингапур"),
     "🇦🇺 Австралия": ("au", "Австралия"),
+    "🇪🇬 Египет": ("eg", "Египет"),
 }
 
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -445,8 +493,9 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if text in COUNTRY_MAP:
         code, name = COUNTRY_MAP[text]
         flag = text.split()[0]
+        time_line = f"\n🕐 Сейчас там: {local_time_str(code)}" if local_time_str(code) else ""
         await update.message.reply_text(
-            f"{flag} <b>{name}</b> — выбери раздел:",
+            f"{flag} <b>{name}</b>{time_line}\n\nВыбери раздел:",
             parse_mode="HTML",
             reply_markup=country_kb(code, name),
         )
@@ -486,7 +535,7 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("news_"):
         country = data[5:]
-        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия"}
+        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия", "eg": "Египет"}
         await q.edit_message_text("⏳ Собираю новости...")
         news = fetch_news(country=country)
         for n in news: mark_sent(n["hash"])
@@ -495,7 +544,7 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("weather_"):
         country = data[8:]
-        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия"}
+        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия", "eg": "Египет"}
         w = get_weather(country)
         await q.edit_message_text(
             f"☀️ <b>Погода — {names.get(country,'')}</b>\n\n{w}",
