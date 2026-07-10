@@ -34,14 +34,16 @@ RSS_FEEDS = [
     {"name": "Coconuts Bali",  "url": "https://coconuts.co/bali/feed/", "flag": "🌴", "country": "id"},
     {"name": "AsiaOne Travel", "url": "https://www.asiaone.com/rss/travel.xml", "flag": "✈️", "country": "sg"},
     {"name": "TTR Weekly",     "url": "https://www.ttrweekly.com/site/feed/", "flag": "📰", "country": "all"},
+    {"name": "Australian Traveller", "url": "https://www.australiantraveller.com/feed/", "flag": "🇦🇺", "country": "au"},
 ]
 
 COUNTRY_KEYWORDS = {
     "vn": ["vietnam","hanoi","ho chi minh","da nang","danang","hoi an","nha trang","halong","sapa","phu quoc","hue","saigon","viet"],
     "id": ["indonesia","bali","jakarta","lombok","komodo","ubud","denpasar","seminyak","canggu","yogyakarta","java"],
     "sg": ["singapore","sentosa","changi"],
+    "au": ["australia","sydney","melbourne","brisbane","perth","adelaide","gold coast","cairns","great barrier reef","uluru","tasmania","canberra","outback"],
 }
-ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
+ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["au"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
 
 # ─── Статичные данные ─────────────────────────────────────────────────────────
 
@@ -76,6 +78,15 @@ VISA_INFO = {
         "• Сайт: eservices.ica.gov.sg\n"
         "• Бесплатно, заполнить за 3 дня до прилёта\n\n"
         "📄 Нужен обратный билет и достаточно средств (~S$100/день)"
+    ),
+    "au": (
+        "🇦🇺 <b>Австралия — условия въезда</b>\n\n"
+        "🔴 <b>Казахстан/Россия</b>: виза обязательна, безвизового режима и eVisitor нет\n\n"
+        "📋 <b>Visitor visa (subclass 600)</b>:\n"
+        "• Оформление: онлайн через ImmiAccount (immi.homeaffairs.gov.au)\n"
+        "• Стоимость: от AU$150\n"
+        "• Срок рассмотрения: от 2 до 4+ недель — подавать заранее\n\n"
+        "📄 Нужны: загранпаспорт, подтверждение финансовой состоятельности, бронь обратного билета"
     ),
 }
 
@@ -124,6 +135,20 @@ HOTELS_INFO = {
         "• Sofitel Singapore Sentosa ⭐⭐⭐⭐⭐\n\n"
         "🔍 Бронирование: booking.com / agoda.com"
     ),
+    "au": (
+        "🇦🇺 <b>Отели Австралии</b>\n\n"
+        "🌆 <b>Сидней</b>\n"
+        "• Park Hyatt Sydney ⭐⭐⭐⭐⭐\n"
+        "• Shangri-La Sydney ⭐⭐⭐⭐⭐\n"
+        "• Ovolo Woolloomooloo ⭐⭐⭐⭐\n\n"
+        "🎭 <b>Мельбурн</b>\n"
+        "• Crown Towers Melbourne ⭐⭐⭐⭐⭐\n"
+        "• The Langham Melbourne ⭐⭐⭐⭐⭐\n\n"
+        "🏖 <b>Голд-Кост / Кэрнс</b>\n"
+        "• QT Gold Coast ⭐⭐⭐⭐⭐\n"
+        "• Pullman Reef Hotel Casino (Cairns) ⭐⭐⭐⭐⭐\n\n"
+        "🔍 Бронирование: booking.com / agoda.com"
+    ),
 }
 
 FLIGHTS_INFO = (
@@ -140,6 +165,9 @@ FLIGHTS_INFO = (
     "• Air Astana: прямые рейсы ALA–SIN\n"
     "• Singapore Airlines / Scoot через разные хабы\n"
     "• В среднем: от $400–650 туда-обратно\n\n"
+    "🇦🇺 <b>Алматы → Австралия (SYD/MEL)</b>\n"
+    "• Прямых рейсов нет, обычно через Дубай, Сингапур или Гуанчжоу\n"
+    "• В среднем: от $900–1400 туда-обратно\n\n"
     "🔍 Поиск билетов: aviasales.ru / skyscanner.com / google.com/flights"
 )
 
@@ -180,6 +208,7 @@ WEATHER_CITIES = {
     "vn": [("Ханой", 21.0285, 105.8542), ("Дананг", 16.0544, 108.2022), ("Хойан", 15.8801, 108.3380), ("Нячанг", 12.2388, 109.1967), ("Фукуок", 10.2899, 103.9840)],
     "id": [("Бали/Денпасар", -8.6705, 115.2126), ("Убуд", -8.5069, 115.2625), ("Ломбок", -8.6524, 116.3240)],
     "sg": [("Сингапур", 1.3521, 103.8198)],
+    "au": [("Сидней", -33.8688, 151.2093), ("Мельбурн", -37.8136, 144.9631), ("Брисбен", -27.4698, 153.0251), ("Голд-Кост", -28.0167, 153.4000)],
 }
 
 WEATHER_ICONS = {"0":"☀️","1":"🌤","2":"⛅","3":"☁️","45":"🌫","48":"🌫","51":"🌦","61":"🌧","71":"❄️","80":"🌦","95":"⛈"}
@@ -348,6 +377,7 @@ def fmt_digest(news_list, title="Дайджест — Вьетнам, Бали, 
 def main_kb():
     return ReplyKeyboardMarkup(
         [["🇻🇳 Вьетнам", "🇮🇩 Индонезия", "🇸🇬 Сингапур"],
+         ["🇦🇺 Австралия"],
          ["🌴 Все новости", "💱 Курс валют"],
          ["🔔 Подписаться", "ℹ️ О боте"]],
         resize_keyboard=True, is_persistent=True,
@@ -405,6 +435,7 @@ COUNTRY_MAP = {
     "🇻🇳 Вьетнам": ("vn", "Вьетнам"),
     "🇮🇩 Индонезия": ("id", "Индонезия"),
     "🇸🇬 Сингапур": ("sg", "Сингапур"),
+    "🇦🇺 Австралия": ("au", "Австралия"),
 }
 
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -455,7 +486,7 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("news_"):
         country = data[5:]
-        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур"}
+        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия"}
         await q.edit_message_text("⏳ Собираю новости...")
         news = fetch_news(country=country)
         for n in news: mark_sent(n["hash"])
@@ -464,7 +495,7 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("weather_"):
         country = data[8:]
-        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур"}
+        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия"}
         w = get_weather(country)
         await q.edit_message_text(
             f"☀️ <b>Погода — {names.get(country,'')}</b>\n\n{w}",
