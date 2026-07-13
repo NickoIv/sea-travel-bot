@@ -45,7 +45,8 @@ COUNTRY_KEYWORDS = {
 }
 ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["eg"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
 
-# Таймзоны для отображения локального времени под каждой страной
+# Таймзоны для отображения локального времени — единая на страну (все города
+# каждой страны здесь лежат в одном часовом поясе, отдельная таблица не нужна)
 TIMEZONES = {
     "vn": "Asia/Ho_Chi_Minh",
     "id": "Asia/Makassar",
@@ -67,7 +68,52 @@ def local_time_str(country_code: str) -> str:
         return ""
     return datetime.now(ZoneInfo(tz)).strftime("%H:%M")
 
-# ─── Статичные данные ─────────────────────────────────────────────────────────
+# ─── Города: координаты (погода) + отели ──────────────────────────────────────
+# Единый источник данных на город — из него строятся и погода, и отели, и
+# навигация. Новости, виза и рейсы остаются на уровне страны (у RSS-фидов
+# нет городской гранулярности, а рейсы бронируются в аэропорт всей страны).
+
+CITIES = {
+    "vn": [
+        {"key": "hanoi", "icon": "🏙", "name": "Ханой", "lat": 21.0285, "lon": 105.8542,
+         "hotels": ["Sofitel Legend Metropole ⭐⭐⭐⭐⭐", "Movenpick Hotel ⭐⭐⭐⭐⭐", "La Siesta Premium ⭐⭐⭐⭐"]},
+        {"key": "da_nang", "icon": "🌉", "name": "Дананг", "lat": 16.0544, "lon": 108.2022,
+         "hotels": ["Intercontinental Sun Peninsula ⭐⭐⭐⭐⭐", "Vinpearl Resort & Spa ⭐⭐⭐⭐⭐"]},
+        {"key": "hoi_an", "icon": "🏮", "name": "Хойан", "lat": 15.8801, "lon": 108.3380,
+         "hotels": ["Anantara Hoi An ⭐⭐⭐⭐⭐", "Almanity Hoi An Wellness Resort ⭐⭐⭐⭐"]},
+        {"key": "nha_trang", "icon": "🏖", "name": "Нячанг", "lat": 12.2388, "lon": 109.1967,
+         "hotels": ["Vinpearl Resort Nha Trang ⭐⭐⭐⭐⭐", "Amiana Resort ⭐⭐⭐⭐⭐"]},
+        {"key": "phu_quoc", "icon": "🏝", "name": "Фукуок", "lat": 10.2899, "lon": 103.9840,
+         "hotels": ["JW Marriott Phu Quoc ⭐⭐⭐⭐⭐", "Premier Residences Phu Quoc ⭐⭐⭐⭐⭐"]},
+    ],
+    "id": [
+        {"key": "denpasar", "icon": "🌆", "name": "Денпасар / Юг Бали", "lat": -8.6705, "lon": 115.2126,
+         "hotels": ["W Bali Seminyak ⭐⭐⭐⭐⭐", "Mulia Resort Nusa Dua ⭐⭐⭐⭐⭐", "Conrad Bali ⭐⭐⭐⭐⭐"]},
+        {"key": "ubud", "icon": "🌿", "name": "Убуд", "lat": -8.5069, "lon": 115.2625,
+         "hotels": ["Four Seasons Sayan ⭐⭐⭐⭐⭐", "Komaneka at Bisma ⭐⭐⭐⭐⭐"]},
+        {"key": "lombok", "icon": "🏝", "name": "Ломбок", "lat": -8.6524, "lon": 116.3240,
+         "hotels": ["The Oberoi Lombok ⭐⭐⭐⭐⭐", "Sheraton Senggigi Beach Resort ⭐⭐⭐⭐"]},
+    ],
+    "sg": [
+        {"key": "singapore", "icon": "🇸🇬", "name": "Сингапур", "lat": 1.3521, "lon": 103.8198,
+         "hotels": ["Marina Bay Sands ⭐⭐⭐⭐⭐", "The Fullerton Hotel ⭐⭐⭐⭐⭐", "Raffles Singapore ⭐⭐⭐⭐⭐"]},
+    ],
+    "eg": [
+        {"key": "cairo", "icon": "🏛", "name": "Каир", "lat": 30.0444, "lon": 31.2357,
+         "hotels": ["Four Seasons Cairo at Nile Plaza ⭐⭐⭐⭐⭐", "Kempinski Nile Hotel ⭐⭐⭐⭐⭐"]},
+        {"key": "hurghada", "icon": "🏖", "name": "Хургада", "lat": 27.2579, "lon": 33.8116,
+         "hotels": ["Steigenberger Al Dau Beach ⭐⭐⭐⭐⭐", "Baron Palace Sahl Hasheesh ⭐⭐⭐⭐⭐"]},
+        {"key": "sharm", "icon": "🤿", "name": "Шарм-эль-Шейх", "lat": 27.9158, "lon": 34.3300,
+         "hotels": ["Rixos Sharm El Sheikh ⭐⭐⭐⭐⭐", "Four Seasons Sharm El Sheikh ⭐⭐⭐⭐⭐"]},
+        {"key": "luxor", "icon": "🏺", "name": "Луксор", "lat": 25.6872, "lon": 32.6396,
+         "hotels": ["Sofitel Winter Palace Luxor ⭐⭐⭐⭐⭐", "Steigenberger Nile Palace Luxor ⭐⭐⭐⭐"]},
+    ],
+}
+
+def find_city(country_code: str, city_key: str) -> dict | None:
+    return next((c for c in CITIES.get(country_code, []) if c["key"] == city_key), None)
+
+# ─── Статичные данные: визы и рейсы (уровень страны) ──────────────────────────
 
 VISA_INFO = {
     "vn": (
@@ -112,66 +158,6 @@ VISA_INFO = {
         "• Стоимость: $25 + сервисный сбор\n"
         "• Срок оформления: 3-7 дней\n\n"
         "📄 Нужен загранпаспорт, действующий минимум 6 месяцев"
-    ),
-}
-
-HOTELS_INFO = {
-    "vn": (
-        "🇻🇳 <b>Отели Вьетнама</b>\n\n"
-        "🏙 <b>Ханой</b>\n"
-        "• Sofitel Legend Metropole ⭐⭐⭐⭐⭐\n"
-        "• Movenpick Hotel ⭐⭐⭐⭐⭐\n"
-        "• La Siesta Premium ⭐⭐⭐⭐\n\n"
-        "🌊 <b>Дананг / Хойан</b>\n"
-        "• Intercontinental Sun Peninsula ⭐⭐⭐⭐⭐\n"
-        "• Vinpearl Resort & Spa ⭐⭐⭐⭐⭐\n"
-        "• Anantara Hoi An ⭐⭐⭐⭐⭐\n\n"
-        "🏝 <b>Фукуок</b>\n"
-        "• JW Marriott Phu Quoc ⭐⭐⭐⭐⭐\n"
-        "• Premier Residences Phu Quoc ⭐⭐⭐⭐⭐\n\n"
-        "🔍 Бронирование: booking.com / agoda.com"
-    ),
-    "id": (
-        "🇮🇩 <b>Отели Бали / Индонезии</b>\n\n"
-        "🌺 <b>Семиньяк / Кангу (тусовочный)</b>\n"
-        "• W Bali Seminyak ⭐⭐⭐⭐⭐\n"
-        "• The Layar Private Villas ⭐⭐⭐⭐⭐\n"
-        "• Katamama Boutique ⭐⭐⭐⭐⭐\n\n"
-        "🌿 <b>Убуд (культура/природа)</b>\n"
-        "• Four Seasons Sayan ⭐⭐⭐⭐⭐\n"
-        "• Komaneka at Bisma ⭐⭐⭐⭐⭐\n"
-        "• Alaya Resort ⭐⭐⭐⭐\n\n"
-        "🏖 <b>Нуса-Дуа (пляж/семья)</b>\n"
-        "• Mulia Resort Nusa Dua ⭐⭐⭐⭐⭐\n"
-        "• Conrad Bali ⭐⭐⭐⭐⭐\n\n"
-        "🔍 Бронирование: booking.com / agoda.com"
-    ),
-    "sg": (
-        "🇸🇬 <b>Отели Сингапура</b>\n\n"
-        "🌆 <b>Центр / Marina Bay</b>\n"
-        "• Marina Bay Sands ⭐⭐⭐⭐⭐ (бассейн на крыше!)\n"
-        "• The Fullerton Hotel ⭐⭐⭐⭐⭐\n"
-        "• Raffles Singapore ⭐⭐⭐⭐⭐\n\n"
-        "🌳 <b>Orchard Road (шопинг)</b>\n"
-        "• Four Seasons Singapore ⭐⭐⭐⭐⭐\n"
-        "• St. Regis Singapore ⭐⭐⭐⭐⭐\n\n"
-        "🏝 <b>Сентоза (пляж/Universal)</b>\n"
-        "• Capella Singapore ⭐⭐⭐⭐⭐\n"
-        "• Sofitel Singapore Sentosa ⭐⭐⭐⭐⭐\n\n"
-        "🔍 Бронирование: booking.com / agoda.com"
-    ),
-    "eg": (
-        "🇪🇬 <b>Отели Египта</b>\n\n"
-        "🏖 <b>Хургада</b>\n"
-        "• Steigenberger Al Dau Beach ⭐⭐⭐⭐⭐\n"
-        "• Baron Palace Sahl Hasheesh ⭐⭐⭐⭐⭐\n\n"
-        "🤿 <b>Шарм-эль-Шейх</b>\n"
-        "• Rixos Sharm El Sheikh ⭐⭐⭐⭐⭐\n"
-        "• Four Seasons Sharm El Sheikh ⭐⭐⭐⭐⭐\n\n"
-        "🏛 <b>Каир</b>\n"
-        "• Four Seasons Cairo at Nile Plaza ⭐⭐⭐⭐⭐\n"
-        "• Kempinski Nile Hotel ⭐⭐⭐⭐⭐\n\n"
-        "🔍 Бронирование: booking.com / agoda.com"
     ),
 }
 
@@ -228,13 +214,6 @@ def translate_to_russian(text: str) -> str:
 
 # ─── Погода ──────────────────────────────────────────────────────────────────
 
-WEATHER_CITIES = {
-    "vn": [("Ханой", 21.0285, 105.8542), ("Дананг", 16.0544, 108.2022), ("Хойан", 15.8801, 108.3380), ("Нячанг", 12.2388, 109.1967), ("Фукуок", 10.2899, 103.9840)],
-    "id": [("Бали/Денпасар", -8.6705, 115.2126), ("Убуд", -8.5069, 115.2625), ("Ломбок", -8.6524, 116.3240)],
-    "sg": [("Сингапур", 1.3521, 103.8198)],
-    "eg": [("Каир", 30.0444, 31.2357), ("Хургада", 27.2579, 33.8116), ("Шарм-эль-Шейх", 27.9158, 34.3300), ("Луксор", 25.6872, 32.6396)],
-}
-
 WEATHER_ICONS = {"0":"☀️","1":"🌤","2":"⛅","3":"☁️","45":"🌫","48":"🌫","51":"🌦","61":"🌧","71":"❄️","80":"🌦","95":"⛈"}
 
 def get_weather_one(name: str, lat: float, lon: float) -> str:
@@ -250,9 +229,9 @@ def get_weather_one(name: str, lat: float, lon: float) -> str:
     except:
         return f"🌡 {name}: нет данных"
 
-def get_weather(country: str) -> str:
-    cities = WEATHER_CITIES.get(country, [])
-    return "\n".join(get_weather_one(name, lat, lon) for name, lat, lon in cities)
+def get_weather_all(country_code: str) -> str:
+    cities = CITIES.get(country_code, [])
+    return "\n".join(get_weather_one(c["name"], c["lat"], c["lon"]) for c in cities)
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -396,6 +375,27 @@ def fmt_digest(news_list, title="Дайджест — Вьетнам, Бали, 
     items = "\n\n".join(fmt_item(n, i+1) for i, n in enumerate(news_list))
     return header + items
 
+def fmt_city_hotels(country_code: str, city_key: str) -> str:
+    city = find_city(country_code, city_key)
+    if not city:
+        return "Информация недоступна"
+    _, country_name = COUNTRIES.get(country_code, ("", ""))
+    lines = [f"{city['icon']} <b>Отели — {city['name']}</b> ({country_name})\n"]
+    lines += [f"• {h}" for h in city["hotels"]]
+    lines.append("\n🔍 Бронирование: booking.com / agoda.com")
+    return "\n".join(lines)
+
+def fmt_city_card(country_code: str, city: dict) -> str:
+    _, country_name = COUNTRIES.get(country_code, ("", ""))
+    tline = local_time_str(country_code)
+    weather = get_weather_one(city["name"], city["lat"], city["lon"])
+    return (
+        f"{city['icon']} <b>{city['name']}</b> · {country_name}\n"
+        f"🕐 Сейчас там: {tline}\n"
+        f"{weather}\n\n"
+        "Выбери, что показать:"
+    )
+
 # ─── Клавиатуры ──────────────────────────────────────────────────────────────
 
 def main_kb():
@@ -412,25 +412,29 @@ def countries_kb() -> InlineKeyboardMarkup:
         for code, (flag, name) in COUNTRIES.items()
     ])
 
-def country_kb(country_code: str, country_name: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📰 Новости", callback_data=f"news_{country_code}"),
-         InlineKeyboardButton("☀️ Погода", callback_data=f"weather_{country_code}")],
-        [InlineKeyboardButton("🗺️ Виза", callback_data=f"visa_{country_code}"),
-         InlineKeyboardButton("🏨 Отели", callback_data=f"hotels_{country_code}")],
-        [InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")],
-    ])
-
-def vn_kb() -> InlineKeyboardMarkup:
-    city_buttons = [
-        InlineKeyboardButton(name, callback_data=f"vncity_{i}")
-        for i, (name, lat, lon) in enumerate(WEATHER_CITIES["vn"])
-    ]
+def country_cities_kb(country_code: str) -> InlineKeyboardMarkup:
+    cities = CITIES.get(country_code, [])
+    city_buttons = [InlineKeyboardButton(f"{c['icon']} {c['name']}", callback_data=f"city_{country_code}_{c['key']}") for c in cities]
     rows = [city_buttons[i:i + 2] for i in range(0, len(city_buttons), 2)]
-    rows.append([InlineKeyboardButton("📰 Новости", callback_data="news_vn"),
-                 InlineKeyboardButton("🗺️ Виза", callback_data="visa_vn")])
-    rows.append([InlineKeyboardButton("🏨 Отели", callback_data="hotels_vn"),
-                 InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")])
+    if len(cities) > 1:
+        rows.append([InlineKeyboardButton("☀️ Погода по всем городам", callback_data=f"weatherall_{country_code}")])
+    rows.append([InlineKeyboardButton("📰 Новости страны", callback_data=f"news_{country_code}"),
+                 InlineKeyboardButton("🗺️ Виза", callback_data=f"visa_{country_code}")])
+    rows.append([InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")])
+    rows.append([InlineKeyboardButton("← Страны", callback_data="countries_root")])
+    return InlineKeyboardMarkup(rows)
+
+def city_kb(country_code: str, city_key: str) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton("🏨 Отели", callback_data=f"cityhotels_{country_code}_{city_key}")],
+        [InlineKeyboardButton("📰 Новости страны", callback_data=f"news_{country_code}"),
+         InlineKeyboardButton("🗺️ Виза", callback_data=f"visa_{country_code}")],
+        [InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")],
+    ]
+    if len(CITIES.get(country_code, [])) > 1:
+        rows.append([InlineKeyboardButton("← Города", callback_data=f"country_{country_code}")])
+    else:
+        rows.append([InlineKeyboardButton("← Страны", callback_data="countries_root")])
     return InlineKeyboardMarkup(rows)
 
 # ─── Команды ─────────────────────────────────────────────────────────────────
@@ -502,7 +506,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🌴 <b>SEA Travel News Bot</b>\n\n"
             "Новости, погода, визы, отели и курс валют\n"
-            "по Вьетнаму, Индонезии (Бали) и Сингапуру.\n\n"
+            "по Вьетнаму, Индонезии (Бали), Сингапуру и Египту.\n\n"
             "📅 Дайджест ежедневно в 10:00 по Алматы\n"
             "🇷🇺 Новости переводятся на русский\n🆓 Без рекламы",
             parse_mode="HTML"
@@ -515,28 +519,39 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data
 
-    if data.startswith("country_"):
+    if data == "countries_root":
+        await q.edit_message_text("🌍 Выбери страну:", reply_markup=countries_kb())
+
+    elif data.startswith("country_"):
         code = data[8:]
-        flag, name = COUNTRIES.get(code, ("", "?"))
-        time_line = f"\n🕐 Сейчас там: {local_time_str(code)}" if local_time_str(code) else ""
-        if code == "vn":
-            await q.edit_message_text(
-                f"{flag} <b>{name}</b>{time_line}\n\nВыбери город или раздел:",
-                parse_mode="HTML", reply_markup=vn_kb(),
-            )
+        cities = CITIES.get(code, [])
+        if len(cities) == 1:
+            # Единственный город страны — сразу открываем его карточку, без лишнего клика
+            city = cities[0]
+            await q.edit_message_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb(code, city["key"]))
         else:
+            flag, name = COUNTRIES.get(code, ("", "?"))
+            time_line = f"\n🕐 Сейчас там: {local_time_str(code)}" if local_time_str(code) else ""
             await q.edit_message_text(
-                f"{flag} <b>{name}</b>{time_line}\n\nВыбери раздел:",
-                parse_mode="HTML", reply_markup=country_kb(code, name),
+                f"{flag} <b>{name}</b>{time_line}\n\nВыбери город:",
+                parse_mode="HTML", reply_markup=country_cities_kb(code),
             )
 
-    elif data.startswith("vncity_"):
-        idx = int(data[7:])
-        cities = WEATHER_CITIES["vn"]
-        if 0 <= idx < len(cities):
-            name, lat, lon = cities[idx]
-            w = get_weather_one(name, lat, lon)
-            await q.edit_message_text(f"☀️ <b>Погода — {name} (Вьетнам)</b>\n\n{w}", parse_mode="HTML")
+    elif data.startswith("city_"):
+        _, code, city_key = data.split("_", 2)
+        city = find_city(code, city_key)
+        if city:
+            await q.edit_message_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb(code, city_key))
+
+    elif data.startswith("cityhotels_"):
+        _, code, city_key = data.split("_", 2)
+        await q.edit_message_text(fmt_city_hotels(code, city_key), parse_mode="HTML")
+
+    elif data.startswith("weatherall_"):
+        code = data[len("weatherall_"):]
+        flag, name = COUNTRIES.get(code, ("", "?"))
+        w = get_weather_all(code)
+        await q.edit_message_text(f"☀️ <b>Погода — {name}, все города</b>\n\n{w}", parse_mode="HTML")
 
     elif data.startswith("news_"):
         country = data[5:]
@@ -547,22 +562,9 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = fmt_digest(news, title=f"Новости — {name}")
         await q.edit_message_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
-    elif data.startswith("weather_"):
-        country = data[8:]
-        name = COUNTRIES.get(country, ("", ""))[1]
-        w = get_weather(country)
-        await q.edit_message_text(
-            f"☀️ <b>Погода — {name}</b>\n\n{w}",
-            parse_mode="HTML"
-        )
-
     elif data.startswith("visa_"):
         country = data[5:]
         await q.edit_message_text(VISA_INFO.get(country, "Информация недоступна"), parse_mode="HTML")
-
-    elif data.startswith("hotels_"):
-        country = data[7:]
-        await q.edit_message_text(HOTELS_INFO.get(country, "Информация недоступна"), parse_mode="HTML")
 
     elif data == "flights":
         await q.edit_message_text(FLIGHTS_INFO, parse_mode="HTML")
