@@ -310,17 +310,32 @@ out center tags;
                     name = tags.get("name")
                     if not name:
                         continue
-                    hotels.append({"name": name[:70], "stars": tags.get("stars"), "wikidata": tags.get("wikidata")})
+                    hotels.append({
+                        "name": name[:70], "stars": tags.get("stars"),
+                        "wikidata": tags.get("wikidata"), "tag_count": len(tags),
+                    })
                 if hotels:
                     return hotels
         except Exception as e:
             log.warning(f"Overpass mirrors all timed out: {e}")
     return []
 
+def _hotel_rank(h: dict):
+    """Сортировка 'от высокой оценки к низкой': у OSM нет пользовательских
+    отзывов (это не Booking/TripAdvisor) — упорядочиваем по официальной
+    звёздности там, где она указана, а для остальных по полноте карточки
+    в OSM (адрес/сайт/телефон и т.д.) как грубому proxy солидности объекта."""
+    try:
+        stars_val = float(h["stars"]) if h.get("stars") else -1.0
+    except (TypeError, ValueError):
+        stars_val = -1.0
+    return (stars_val, h.get("tag_count", 0))
+
 def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
-    """Достаёт (с кэшированием) пул отелей города и выдаёт новую случайную
-    тридцатку. Реальный сетевой запрос к Overpass выполняется только один
-    раз за город на весь процесс — дальше только перемешивание в памяти."""
+    """Достаёт (с кэшированием) пул отелей города, выдаёт новую случайную
+    тридцатку и сортирует её от высокой оценки к низкой. Реальный сетевой
+    запрос к Overpass выполняется только один раз за город на весь процесс —
+    дальше только перемешивание в памяти."""
     city = find_city(country_code, city_key)
     if not city:
         return []
@@ -329,21 +344,29 @@ def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
         pool = _fetch_osm_hotels(city["lat"], city["lon"])
         if not pool:
             fallback_names = FALLBACK_HOTELS.get(country_code, {}).get(city_key, [])
-            pool = [{"name": n, "stars": None, "wikidata": None} for n in fallback_names]
+            pool = [{"name": n, "stars": None, "wikidata": None, "tag_count": 0} for n in fallback_names]
         _city_hotel_cache[cache_key] = pool
     pool = _city_hotel_cache[cache_key]
     if not pool:
         return []
     chosen = random.sample(pool, min(HOTEL_POOL_SHOW, len(pool)))
+    chosen.sort(key=_hotel_rank, reverse=True)
     _shown_hotels_cache[cache_key] = chosen
     return chosen
 
-def _fetch_wikidata_image(qid: str) -> str | None:
+# Wikimedia Commons отдаёт 403 на прямые ссылки на файлы без описательного
+# User-Agent (часть их политики по борьбе со спамом хотлинков). Поэтому фото
+# скачиваем сами с этим заголовком и передаём в Telegram уже байтами — иначе
+# Telegram пытается получить картинку по голой ссылке своим User-Agent'ом и
+# тоже получает 403, фото просто не приходит.
+COMMONS_HEADERS = {"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder; https://github.com/NickoIv/sea-travel-bot)"}
+
+def _fetch_hotel_photo_bytes(qid: str) -> bytes | None:
     """Best-effort: если у отеля в OSM есть привязка к Wikidata — пробуем
-    достать фото оттуда (Wikimedia Commons). Есть далеко не у всех объектов."""
+    скачать фото оттуда (Wikimedia Commons). Есть далеко не у всех объектов."""
     try:
         url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
-        resp = requests.get(url, headers={"User-Agent": "sea-travel-bot/1.0"}, timeout=6)
+        resp = requests.get(url, headers=COMMONS_HEADERS, timeout=6)
         resp.raise_for_status()
         entity = resp.json()["entities"][qid]
         p18 = entity.get("claims", {}).get("P18")
@@ -351,26 +374,31 @@ def _fetch_wikidata_image(qid: str) -> str | None:
             return None
         filename = p18[0]["mainsnak"]["datavalue"]["value"]
         filename_enc = urllib.parse.quote(filename.replace(" ", "_"))
-        return f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename_enc}?width=800"
+        photo_url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename_enc}?width=800"
+        img_resp = requests.get(photo_url, headers=COMMONS_HEADERS, timeout=10)
+        img_resp.raise_for_status()
+        if not img_resp.headers.get("Content-Type", "").startswith("image/"):
+            return None
+        return img_resp.content
     except Exception:
         return None
 
 def _resolve_page_photos(page: list[dict]) -> None:
     """Подтягивает фото только для текущей отображаемой страницы (10 отелей),
     а не для всех 30 — иначе ожидание было бы намного дольше. Мутирует
-    элементы page на месте, добавляя ключ 'photo_url'."""
+    элементы page на месте, добавляя ключ 'photo_bytes'."""
     candidates = [h for h in page if h.get("wikidata")]
     if not candidates:
         return
     with ThreadPoolExecutor(max_workers=min(6, len(candidates))) as pool:
-        futures = {pool.submit(_fetch_wikidata_image, h["wikidata"]): h for h in candidates}
+        futures = {pool.submit(_fetch_hotel_photo_bytes, h["wikidata"]): h for h in candidates}
         try:
-            for future in as_completed(futures, timeout=10):
+            for future in as_completed(futures, timeout=18):
                 h = futures[future]
                 try:
-                    h["photo_url"] = future.result()
+                    h["photo_bytes"] = future.result()
                 except Exception:
-                    h["photo_url"] = None
+                    h["photo_bytes"] = None
         except Exception as e:
             log.warning(f"Wikidata photo lookup timed out: {e}")
 
@@ -384,7 +412,7 @@ def _stars_str(stars) -> str:
 def fmt_hotels_header(city: dict, country_name: str, count: int) -> str:
     header = f"{city['icon']} <b>Отели — {city['name']}</b> ({country_name})"
     if count:
-        header += f"\n<i>Показано {count} вариантов — жми «Показать другие», чтобы увидеть новые</i>"
+        header += f"\n<i>{count} вариантов, от высокой оценки к низкой — жми «Показать другие» для новой подборки</i>"
     else:
         header += "\n\n😕 Не удалось получить список отелей. Попробуй ещё раз чуть позже."
     return header
@@ -671,7 +699,7 @@ async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: s
     for j, h in enumerate(page):
         i = offset + j + 1
         line = fmt_hotel_line(i, h, city_en)
-        photo = h.get("photo_url")
+        photo = h.get("photo_bytes")
         if photo:
             try:
                 await ctx.bot.send_photo(chat_id, photo=photo, caption=line, parse_mode="HTML")
