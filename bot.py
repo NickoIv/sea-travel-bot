@@ -220,10 +220,6 @@ def get_weather_one(name: str, lat: float, lon: float) -> str:
     except:
         return f"🌡 {name}: нет данных"
 
-def get_weather_all(country_code: str) -> str:
-    cities = CITIES.get(country_code, [])
-    return "\n".join(get_weather_one(c["name"], c["lat"], c["lon"]) for c in cities)
-
 # ─── Отели (OpenStreetMap / Overpass API, без ключа) ──────────────────────────
 # У Agoda и Trip.com нет бесплатного публичного API — ссылки ведут на поиск
 # по названию отеля на их сайтах, а не на гарантированную страницу конкретного
@@ -658,7 +654,8 @@ def main_kb():
     )
 
 def countries_kb():
-    rows = [[f"{flag} {name}"] for code, (flag, name) in COUNTRIES.items()]
+    labels = [f"{flag} {name}" for code, (flag, name) in COUNTRIES.items()]
+    rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
     rows.append(["⬅️ Назад"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
@@ -666,19 +663,15 @@ def cities_kb(country_code: str):
     cities = CITIES.get(country_code, [])
     labels = [f"{c['icon']} {c['name']}" for c in cities]
     rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
-    if len(cities) > 1:
-        rows.append(["☀️ Погода по всем городам"])
     rows.append(["📰 Новости страны", "🗺️ Виза"])
-    rows.append(["✈️ Рейсы из Алматы"])
-    rows.append(["⬅️ Назад"])
+    rows.append(["✈️ Рейсы из Алматы", "⬅️ Назад"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 def city_kb():
     return ReplyKeyboardMarkup(
         [["🏨 Отели"],
          ["📰 Новости страны", "🗺️ Виза"],
-         ["✈️ Рейсы из Алматы"],
-         ["⬅️ Назад"]],
+         ["✈️ Рейсы из Алматы", "⬅️ Назад"]],
         resize_keyboard=True, is_persistent=True,
     )
 
@@ -687,8 +680,7 @@ def hotels_kb(offset: int, total: int):
     next_offset = offset + HOTEL_PAGE_SIZE
     if next_offset < total:
         rows.append([f"▶️ Ещё {min(HOTEL_PAGE_SIZE, total - next_offset)}"])
-    rows.append(["🔀 Показать другие 30"])
-    rows.append(["⬅️ Назад"])
+    rows.append(["🔀 Показать другие 30", "⬅️ Назад"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 # ─── Команды ─────────────────────────────────────────────────────────────────
@@ -831,14 +823,6 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         city = find_city(code, city_key)
         set_state(chat_id, screen="city", country=code, city=city_key)
         await update.message.reply_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb())
-        return
-
-    # ── Погода по всем городам страны ──
-    if text == "☀️ Погода по всем городам" and state.get("country"):
-        code = state["country"]
-        flag, name = COUNTRIES.get(code, ("", "?"))
-        w = get_weather_all(code)
-        await update.message.reply_text(f"☀️ <b>Погода — {name}, все города</b>\n\n{w}", parse_mode="HTML")
         return
 
     # ── Новости / виза / рейсы (уровень страны, доступны из cities и city) ──
