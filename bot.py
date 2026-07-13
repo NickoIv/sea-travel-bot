@@ -7,10 +7,9 @@ import hashlib
 import urllib.request
 import urllib.parse
 import re
-from datetime import datetime
+from datetime import datetime, time as dtime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, ContextTypes,
@@ -35,7 +34,6 @@ RSS_FEEDS = [
     {"name": "Coconuts Bali",  "url": "https://coconuts.co/bali/feed/", "flag": "🌴", "country": "id"},
     {"name": "AsiaOne Travel", "url": "https://www.asiaone.com/rss/travel.xml", "flag": "✈️", "country": "sg"},
     {"name": "TTR Weekly",     "url": "https://www.ttrweekly.com/site/feed/", "flag": "📰", "country": "all"},
-    {"name": "Australian Traveller", "url": "https://www.australiantraveller.com/feed/", "flag": "🇦🇺", "country": "au"},
     {"name": "Egypt Independent", "url": "https://egyptindependent.com/feed/", "flag": "🇪🇬", "country": "eg"},
 ]
 
@@ -43,18 +41,24 @@ COUNTRY_KEYWORDS = {
     "vn": ["vietnam","hanoi","ho chi minh","da nang","danang","hoi an","nha trang","halong","sapa","phu quoc","hue","saigon","viet"],
     "id": ["indonesia","bali","jakarta","lombok","komodo","ubud","denpasar","seminyak","canggu","yogyakarta","java"],
     "sg": ["singapore","sentosa","changi"],
-    "au": ["australia","sydney","melbourne","brisbane","perth","adelaide","gold coast","cairns","great barrier reef","uluru","tasmania","canberra","outback"],
     "eg": ["egypt","cairo","luxor","aswan","hurghada","sharm el sheikh","alexandria","giza","pyramids","red sea","nile"],
 }
-ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["au"] + COUNTRY_KEYWORDS["eg"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
+ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["eg"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
 
 # Таймзоны для отображения локального времени под каждой страной
 TIMEZONES = {
     "vn": "Asia/Ho_Chi_Minh",
     "id": "Asia/Makassar",
     "sg": "Asia/Singapore",
-    "au": "Australia/Sydney",
     "eg": "Africa/Cairo",
+}
+
+# Флаги и названия стран — используется в меню "Страны" и в подписях разделов
+COUNTRIES = {
+    "vn": ("🇻🇳", "Вьетнам"),
+    "id": ("🇮🇩", "Индонезия"),
+    "sg": ("🇸🇬", "Сингапур"),
+    "eg": ("🇪🇬", "Египет"),
 }
 
 def local_time_str(country_code: str) -> str:
@@ -96,15 +100,6 @@ VISA_INFO = {
         "• Сайт: eservices.ica.gov.sg\n"
         "• Бесплатно, заполнить за 3 дня до прилёта\n\n"
         "📄 Нужен обратный билет и достаточно средств (~S$100/день)"
-    ),
-    "au": (
-        "🇦🇺 <b>Австралия — условия въезда</b>\n\n"
-        "🔴 <b>Казахстан/Россия</b>: виза обязательна, безвизового режима и eVisitor нет\n\n"
-        "📋 <b>Visitor visa (subclass 600)</b>:\n"
-        "• Оформление: онлайн через ImmiAccount (immi.homeaffairs.gov.au)\n"
-        "• Стоимость: от AU$150\n"
-        "• Срок рассмотрения: от 2 до 4+ недель — подавать заранее\n\n"
-        "📄 Нужны: загранпаспорт, подтверждение финансовой состоятельности, бронь обратного билета"
     ),
     "eg": (
         "🇪🇬 <b>Египет — условия въезда</b>\n\n"
@@ -165,20 +160,6 @@ HOTELS_INFO = {
         "• Sofitel Singapore Sentosa ⭐⭐⭐⭐⭐\n\n"
         "🔍 Бронирование: booking.com / agoda.com"
     ),
-    "au": (
-        "🇦🇺 <b>Отели Австралии</b>\n\n"
-        "🌆 <b>Сидней</b>\n"
-        "• Park Hyatt Sydney ⭐⭐⭐⭐⭐\n"
-        "• Shangri-La Sydney ⭐⭐⭐⭐⭐\n"
-        "• Ovolo Woolloomooloo ⭐⭐⭐⭐\n\n"
-        "🎭 <b>Мельбурн</b>\n"
-        "• Crown Towers Melbourne ⭐⭐⭐⭐⭐\n"
-        "• The Langham Melbourne ⭐⭐⭐⭐⭐\n\n"
-        "🏖 <b>Голд-Кост / Кэрнс</b>\n"
-        "• QT Gold Coast ⭐⭐⭐⭐⭐\n"
-        "• Pullman Reef Hotel Casino (Cairns) ⭐⭐⭐⭐⭐\n\n"
-        "🔍 Бронирование: booking.com / agoda.com"
-    ),
     "eg": (
         "🇪🇬 <b>Отели Египта</b>\n\n"
         "🏖 <b>Хургада</b>\n"
@@ -208,9 +189,6 @@ FLIGHTS_INFO = (
     "• Air Astana: прямые рейсы ALA–SIN\n"
     "• Singapore Airlines / Scoot через разные хабы\n"
     "• В среднем: от $400–650 туда-обратно\n\n"
-    "🇦🇺 <b>Алматы → Австралия (SYD/MEL)</b>\n"
-    "• Прямых рейсов нет, обычно через Дубай, Сингапур или Гуанчжоу\n"
-    "• В среднем: от $900–1400 туда-обратно\n\n"
     "🇪🇬 <b>Алматы → Египет (HRG/SSH)</b>\n"
     "• Чартерные и прямые рейсы в Хургаду и Шарм-эль-Шейх (сезонно)\n"
     "• В среднем: от $500–800 туда-обратно\n\n"
@@ -254,28 +232,27 @@ WEATHER_CITIES = {
     "vn": [("Ханой", 21.0285, 105.8542), ("Дананг", 16.0544, 108.2022), ("Хойан", 15.8801, 108.3380), ("Нячанг", 12.2388, 109.1967), ("Фукуок", 10.2899, 103.9840)],
     "id": [("Бали/Денпасар", -8.6705, 115.2126), ("Убуд", -8.5069, 115.2625), ("Ломбок", -8.6524, 116.3240)],
     "sg": [("Сингапур", 1.3521, 103.8198)],
-    "au": [("Сидней", -33.8688, 151.2093), ("Мельбурн", -37.8136, 144.9631), ("Брисбен", -27.4698, 153.0251), ("Голд-Кост", -28.0167, 153.4000)],
     "eg": [("Каир", 30.0444, 31.2357), ("Хургада", 27.2579, 33.8116), ("Шарм-эль-Шейх", 27.9158, 34.3300), ("Луксор", 25.6872, 32.6396)],
 }
 
 WEATHER_ICONS = {"0":"☀️","1":"🌤","2":"⛅","3":"☁️","45":"🌫","48":"🌫","51":"🌦","61":"🌧","71":"❄️","80":"🌦","95":"⛈"}
 
+def get_weather_one(name: str, lat: float, lon: float) -> str:
+    try:
+        url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+               f"&current=temperature_2m,weathercode&timezone=auto")
+        with urllib.request.urlopen(url, timeout=8) as r:
+            d = json.loads(r.read())
+        temp = round(d["current"]["temperature_2m"])
+        code = str(d["current"]["weathercode"])
+        icon = WEATHER_ICONS.get(code, "🌡")
+        return f"{icon} {name}: <b>{temp}°C</b>"
+    except:
+        return f"🌡 {name}: нет данных"
+
 def get_weather(country: str) -> str:
     cities = WEATHER_CITIES.get(country, [])
-    lines = []
-    for name, lat, lon in cities:
-        try:
-            url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-                   f"&current=temperature_2m,weathercode&timezone=auto")
-            with urllib.request.urlopen(url, timeout=8) as r:
-                d = json.loads(r.read())
-            temp = round(d["current"]["temperature_2m"])
-            code = str(d["current"]["weathercode"])
-            icon = WEATHER_ICONS.get(code, "🌡")
-            lines.append(f"{icon} {name}: <b>{temp}°C</b>")
-        except:
-            lines.append(f"🌡 {name}: нет данных")
-    return "\n".join(lines)
+    return "\n".join(get_weather_one(name, lat, lon) for name, lat, lon in cities)
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -423,12 +400,17 @@ def fmt_digest(news_list, title="Дайджест — Вьетнам, Бали, 
 
 def main_kb():
     return ReplyKeyboardMarkup(
-        [["🇻🇳 Вьетнам", "🇮🇩 Индонезия", "🇸🇬 Сингапур"],
-         ["🇦🇺 Австралия", "🇪🇬 Египет"],
+        [["📍 Страны"],
          ["🌴 Все новости", "💱 Курс валют"],
          ["🔔 Подписаться", "ℹ️ О боте"]],
         resize_keyboard=True, is_persistent=True,
     )
+
+def countries_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"{flag} {name}", callback_data=f"country_{code}")]
+        for code, (flag, name) in COUNTRIES.items()
+    ])
 
 def country_kb(country_code: str, country_name: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
@@ -438,6 +420,18 @@ def country_kb(country_code: str, country_name: str) -> InlineKeyboardMarkup:
          InlineKeyboardButton("🏨 Отели", callback_data=f"hotels_{country_code}")],
         [InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")],
     ])
+
+def vn_kb() -> InlineKeyboardMarkup:
+    city_buttons = [
+        InlineKeyboardButton(name, callback_data=f"vncity_{i}")
+        for i, (name, lat, lon) in enumerate(WEATHER_CITIES["vn"])
+    ]
+    rows = [city_buttons[i:i + 2] for i in range(0, len(city_buttons), 2)]
+    rows.append([InlineKeyboardButton("📰 Новости", callback_data="news_vn"),
+                 InlineKeyboardButton("🗺️ Виза", callback_data="visa_vn")])
+    rows.append([InlineKeyboardButton("🏨 Отели", callback_data="hotels_vn"),
+                 InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")])
+    return InlineKeyboardMarkup(rows)
 
 # ─── Команды ─────────────────────────────────────────────────────────────────
 
@@ -478,26 +472,14 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ─── Кнопки Reply ─────────────────────────────────────────────────────────────
 
-COUNTRY_MAP = {
-    "🇻🇳 Вьетнам": ("vn", "Вьетнам"),
-    "🇮🇩 Индонезия": ("id", "Индонезия"),
-    "🇸🇬 Сингапур": ("sg", "Сингапур"),
-    "🇦🇺 Австралия": ("au", "Австралия"),
-    "🇪🇬 Египет": ("eg", "Египет"),
-}
-
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     chat_id = update.effective_chat.id
 
-    if text in COUNTRY_MAP:
-        code, name = COUNTRY_MAP[text]
-        flag = text.split()[0]
-        time_line = f"\n🕐 Сейчас там: {local_time_str(code)}" if local_time_str(code) else ""
+    if text == "📍 Страны":
         await update.message.reply_text(
-            f"{flag} <b>{name}</b>{time_line}\n\nВыбери раздел:",
-            parse_mode="HTML",
-            reply_markup=country_kb(code, name),
+            "🌍 Выбери страну:",
+            reply_markup=countries_kb(),
         )
 
     elif text == "🌴 Все новости":
@@ -533,21 +515,44 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await q.answer()
     data = q.data
 
-    if data.startswith("news_"):
+    if data.startswith("country_"):
+        code = data[8:]
+        flag, name = COUNTRIES.get(code, ("", "?"))
+        time_line = f"\n🕐 Сейчас там: {local_time_str(code)}" if local_time_str(code) else ""
+        if code == "vn":
+            await q.edit_message_text(
+                f"{flag} <b>{name}</b>{time_line}\n\nВыбери город или раздел:",
+                parse_mode="HTML", reply_markup=vn_kb(),
+            )
+        else:
+            await q.edit_message_text(
+                f"{flag} <b>{name}</b>{time_line}\n\nВыбери раздел:",
+                parse_mode="HTML", reply_markup=country_kb(code, name),
+            )
+
+    elif data.startswith("vncity_"):
+        idx = int(data[7:])
+        cities = WEATHER_CITIES["vn"]
+        if 0 <= idx < len(cities):
+            name, lat, lon = cities[idx]
+            w = get_weather_one(name, lat, lon)
+            await q.edit_message_text(f"☀️ <b>Погода — {name} (Вьетнам)</b>\n\n{w}", parse_mode="HTML")
+
+    elif data.startswith("news_"):
         country = data[5:]
-        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия", "eg": "Египет"}
+        name = COUNTRIES.get(country, ("", ""))[1]
         await q.edit_message_text("⏳ Собираю новости...")
         news = fetch_news(country=country)
         for n in news: mark_sent(n["hash"])
-        text = fmt_digest(news, title=f"Новости — {names.get(country,'')}")
+        text = fmt_digest(news, title=f"Новости — {name}")
         await q.edit_message_text(text, parse_mode="HTML", disable_web_page_preview=True)
 
     elif data.startswith("weather_"):
         country = data[8:]
-        names = {"vn": "Вьетнам", "id": "Индонезия/Бали", "sg": "Сингапур", "au": "Австралия", "eg": "Египет"}
+        name = COUNTRIES.get(country, ("", ""))[1]
         w = get_weather(country)
         await q.edit_message_text(
-            f"☀️ <b>Погода — {names.get(country,'')}</b>\n\n{w}",
+            f"☀️ <b>Погода — {name}</b>\n\n{w}",
             parse_mode="HTML"
         )
 
@@ -564,7 +569,7 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ─── Рассылка ────────────────────────────────────────────────────────────────
 
-async def send_daily(app):
+async def send_daily(ctx: ContextTypes.DEFAULT_TYPE):
     data = load_data()
     if not data["subscribers"]: return
     news = fetch_news()
@@ -573,7 +578,7 @@ async def send_daily(app):
     for n in news: mark_sent(n["hash"])
     for uid in data["subscribers"]:
         try:
-            await app.bot.send_message(uid, text, parse_mode="HTML", disable_web_page_preview=True)
+            await ctx.bot.send_message(uid, text, parse_mode="HTML", disable_web_page_preview=True)
             await asyncio.sleep(0.05)
         except Exception as e:
             log.warning(f"Send error {uid}: {e}")
@@ -592,10 +597,13 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(lambda: asyncio.create_task(send_daily(app)),
-        trigger="cron", hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC)
-    scheduler.start()
+    # JobQueue управляется тем же event loop, что и run_polling — в отличие от
+    # отдельного AsyncIOScheduler, запущенного до старта polling-цикла, задания
+    # здесь гарантированно срабатывают по расписанию.
+    app.job_queue.run_daily(
+        send_daily,
+        time=dtime(hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC, tzinfo=timezone.utc),
+    )
     log.info("🌴 SEA Travel News Bot запущен!")
     app.run_polling(drop_pending_updates=True)
 
