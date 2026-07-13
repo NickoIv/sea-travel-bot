@@ -14,9 +14,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time as dtime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, ContextTypes,
+    Application, CommandHandler, ContextTypes,
     MessageHandler, filters
 )
 
@@ -227,7 +227,8 @@ def get_weather_all(country_code: str) -> str:
 # ─── Отели (OpenStreetMap / Overpass API, без ключа) ──────────────────────────
 # У Agoda и Trip.com нет бесплатного публичного API — ссылки ведут на поиск
 # по названию отеля на их сайтах, а не на гарантированную страницу конкретного
-# объекта. Названия и адреса отелей — реальные, из OpenStreetMap.
+# объекта. Названия и адреса отелей — реальные, из OpenStreetMap. Фото — через
+# привязку к Wikidata (тег wikidata в OSM), если она у объекта есть.
 
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
@@ -309,7 +310,7 @@ out center tags;
                     name = tags.get("name")
                     if not name:
                         continue
-                    hotels.append({"name": name[:70], "stars": tags.get("stars")})
+                    hotels.append({"name": name[:70], "stars": tags.get("stars"), "wikidata": tags.get("wikidata")})
                 if hotels:
                     return hotels
         except Exception as e:
@@ -328,7 +329,7 @@ def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
         pool = _fetch_osm_hotels(city["lat"], city["lon"])
         if not pool:
             fallback_names = FALLBACK_HOTELS.get(country_code, {}).get(city_key, [])
-            pool = [{"name": n, "stars": None} for n in fallback_names]
+            pool = [{"name": n, "stars": None, "wikidata": None} for n in fallback_names]
         _city_hotel_cache[cache_key] = pool
     pool = _city_hotel_cache[cache_key]
     if not pool:
@@ -336,6 +337,42 @@ def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
     chosen = random.sample(pool, min(HOTEL_POOL_SHOW, len(pool)))
     _shown_hotels_cache[cache_key] = chosen
     return chosen
+
+def _fetch_wikidata_image(qid: str) -> str | None:
+    """Best-effort: если у отеля в OSM есть привязка к Wikidata — пробуем
+    достать фото оттуда (Wikimedia Commons). Есть далеко не у всех объектов."""
+    try:
+        url = f"https://www.wikidata.org/wiki/Special:EntityData/{qid}.json"
+        resp = requests.get(url, headers={"User-Agent": "sea-travel-bot/1.0"}, timeout=6)
+        resp.raise_for_status()
+        entity = resp.json()["entities"][qid]
+        p18 = entity.get("claims", {}).get("P18")
+        if not p18:
+            return None
+        filename = p18[0]["mainsnak"]["datavalue"]["value"]
+        filename_enc = urllib.parse.quote(filename.replace(" ", "_"))
+        return f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename_enc}?width=800"
+    except Exception:
+        return None
+
+def _resolve_page_photos(page: list[dict]) -> None:
+    """Подтягивает фото только для текущей отображаемой страницы (10 отелей),
+    а не для всех 30 — иначе ожидание было бы намного дольше. Мутирует
+    элементы page на месте, добавляя ключ 'photo_url'."""
+    candidates = [h for h in page if h.get("wikidata")]
+    if not candidates:
+        return
+    with ThreadPoolExecutor(max_workers=min(6, len(candidates))) as pool:
+        futures = {pool.submit(_fetch_wikidata_image, h["wikidata"]): h for h in candidates}
+        try:
+            for future in as_completed(futures, timeout=10):
+                h = futures[future]
+                try:
+                    h["photo_url"] = future.result()
+                except Exception:
+                    h["photo_url"] = None
+        except Exception as e:
+            log.warning(f"Wikidata photo lookup timed out: {e}")
 
 def _stars_str(stars) -> str:
     try:
@@ -513,7 +550,28 @@ def fmt_city_card(country_code: str, city: dict) -> str:
         "Выбери, что показать:"
     )
 
-# ─── Клавиатуры ──────────────────────────────────────────────────────────────
+# ─── Навигация: состояние по chat_id ────────────────────────────────────────
+# Reply-кнопки (в отличие от inline) не несут в себе контекст — приходит
+# просто текст "▶️ Ещё 10" без указания, о каком городе речь. Поэтому храним
+# в памяти процесса, на каком экране находится каждый чат.
+
+_nav_state: dict[int, dict] = {}
+
+def get_state(chat_id: int) -> dict:
+    return _nav_state.get(chat_id, {"screen": "root"})
+
+def set_state(chat_id: int, **kwargs) -> dict:
+    st = _nav_state.setdefault(chat_id, {"screen": "root"})
+    st.update(kwargs)
+    return st
+
+COUNTRY_LABEL_TO_CODE = {f"{flag} {name}": code for code, (flag, name) in COUNTRIES.items()}
+CITY_LABEL_TO_KEY = {
+    f"{c['icon']} {c['name']}": (code, c["key"])
+    for code, cities in CITIES.items() for c in cities
+}
+
+# ─── Клавиатуры (все — Reply, живут в нижней панели) ──────────────────────────
 
 def main_kb():
     return ReplyKeyboardMarkup(
@@ -523,53 +581,45 @@ def main_kb():
         resize_keyboard=True, is_persistent=True,
     )
 
-def countries_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{flag} {name}", callback_data=f"country_{code}")]
-        for code, (flag, name) in COUNTRIES.items()
-    ])
+def countries_kb():
+    rows = [[f"{flag} {name}"] for code, (flag, name) in COUNTRIES.items()]
+    rows.append(["⬅️ Назад"])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
-def country_cities_kb(country_code: str) -> InlineKeyboardMarkup:
+def cities_kb(country_code: str):
     cities = CITIES.get(country_code, [])
-    city_buttons = [InlineKeyboardButton(f"{c['icon']} {c['name']}", callback_data=f"city_{country_code}_{c['key']}") for c in cities]
-    rows = [city_buttons[i:i + 2] for i in range(0, len(city_buttons), 2)]
+    labels = [f"{c['icon']} {c['name']}" for c in cities]
+    rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
     if len(cities) > 1:
-        rows.append([InlineKeyboardButton("☀️ Погода по всем городам", callback_data=f"weatherall_{country_code}")])
-    rows.append([InlineKeyboardButton("📰 Новости страны", callback_data=f"news_{country_code}"),
-                 InlineKeyboardButton("🗺️ Виза", callback_data=f"visa_{country_code}")])
-    rows.append([InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")])
-    rows.append([InlineKeyboardButton("← Страны", callback_data="countries_root")])
-    return InlineKeyboardMarkup(rows)
+        rows.append(["☀️ Погода по всем городам"])
+    rows.append(["📰 Новости страны", "🗺️ Виза"])
+    rows.append(["✈️ Рейсы из Алматы"])
+    rows.append(["⬅️ Назад"])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
-def city_kb(country_code: str, city_key: str) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton("🏨 Отели", callback_data=f"cityhotels_{country_code}_{city_key}")],
-        [InlineKeyboardButton("📰 Новости страны", callback_data=f"news_{country_code}"),
-         InlineKeyboardButton("🗺️ Виза", callback_data=f"visa_{country_code}")],
-        [InlineKeyboardButton("✈️ Рейсы из Алматы", callback_data="flights")],
-    ]
-    if len(CITIES.get(country_code, [])) > 1:
-        rows.append([InlineKeyboardButton("← Города", callback_data=f"country_{country_code}")])
-    else:
-        rows.append([InlineKeyboardButton("← Страны", callback_data="countries_root")])
-    return InlineKeyboardMarkup(rows)
+def city_kb():
+    return ReplyKeyboardMarkup(
+        [["🏨 Отели"],
+         ["📰 Новости страны", "🗺️ Виза"],
+         ["✈️ Рейсы из Алматы"],
+         ["⬅️ Назад"]],
+        resize_keyboard=True, is_persistent=True,
+    )
 
-def hotels_result_kb(country_code: str, city_key: str, offset: int, total: int) -> InlineKeyboardMarkup:
+def hotels_kb(offset: int, total: int):
     rows = []
     next_offset = offset + HOTEL_PAGE_SIZE
     if next_offset < total:
-        rows.append([InlineKeyboardButton(
-            f"▶️ Ещё {min(HOTEL_PAGE_SIZE, total - next_offset)}",
-            callback_data=f"hotelspage_{country_code}_{city_key}_{next_offset}",
-        )])
-    rows.append([InlineKeyboardButton("🔀 Показать другие 30", callback_data=f"cityhotels_{country_code}_{city_key}")])
-    rows.append([InlineKeyboardButton("← Город", callback_data=f"city_{country_code}_{city_key}")])
-    return InlineKeyboardMarkup(rows)
+        rows.append([f"▶️ Ещё {min(HOTEL_PAGE_SIZE, total - next_offset)}"])
+    rows.append(["🔀 Показать другие 30"])
+    rows.append(["⬅️ Назад"])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 # ─── Команды ─────────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     name = update.effective_user.first_name or "Путешественник"
+    set_state(update.effective_chat.id, screen="root", country=None, city=None)
     await update.message.reply_text(
         f"Привет, {name}! 🌏\n\n"
         "Выбери страну или раздел 👇",
@@ -603,35 +653,68 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     status = "✅ Подписан" if is_subscribed(update.effective_user.id) else "🔕 Не подписан"
     await update.message.reply_text(f"📊 Статус: {status}\nПодписчиков: {len(data['subscribers'])}", parse_mode="HTML")
 
+# ─── Отели: отправка страницы (текст + фото где есть) ─────────────────────────
+
+async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: str, city_key: str,
+                            city: dict, hotels: list[dict], offset: int):
+    country_name = COUNTRIES.get(code, ("", ""))[1]
+    if not hotels:
+        await ctx.bot.send_message(chat_id, fmt_hotels_header(city, country_name, 0),
+                                    parse_mode="HTML", reply_markup=hotels_kb(0, 0))
+        return
+    page = hotels[offset:offset + HOTEL_PAGE_SIZE]
+    await asyncio.to_thread(_resolve_page_photos, page)
+    city_en = city.get("en", city["name"])
+    header = fmt_hotels_header(city, country_name, len(hotels))
+    await ctx.bot.send_message(chat_id, header, parse_mode="HTML", reply_markup=hotels_kb(offset, len(hotels)))
+    text_lines = []
+    for j, h in enumerate(page):
+        i = offset + j + 1
+        line = fmt_hotel_line(i, h, city_en)
+        photo = h.get("photo_url")
+        if photo:
+            try:
+                await ctx.bot.send_photo(chat_id, photo=photo, caption=line, parse_mode="HTML")
+                continue
+            except Exception as e:
+                log.warning(f"Send hotel photo failed: {e}")
+        text_lines.append(line)
+    if text_lines:
+        await ctx.bot.send_message(chat_id, "\n".join(text_lines), parse_mode="HTML", disable_web_page_preview=True)
+
 # ─── Кнопки Reply ─────────────────────────────────────────────────────────────
 
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     chat_id = update.effective_chat.id
+    state = get_state(chat_id)
 
+    # ── Главное меню ──
     if text == "📍 Страны":
-        await update.message.reply_text(
-            "🌍 Выбери страну:",
-            reply_markup=countries_kb(),
-        )
+        set_state(chat_id, screen="countries", country=None, city=None)
+        await update.message.reply_text("🌍 Выбери страну:", reply_markup=countries_kb())
+        return
 
-    elif text == "🌴 Все новости":
+    if text == "🌴 Все новости":
         msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
         news = fetch_news()
         for n in news: mark_sent(n["hash"])
         await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
+        return
 
-    elif text == "💱 Курс валют":
+    if text == "💱 Курс валют":
         await update.message.reply_text(get_rates(), parse_mode="HTML")
+        return
 
-    elif text == "🔔 Подписаться":
+    if text == "🔔 Подписаться":
         add_subscriber(chat_id)
         await update.message.reply_text(
             "✅ Подписка оформлена!\nДайджест каждое утро в <b>10:00 по Алматы</b>.",
             parse_mode="HTML"
         )
+        return
 
-    elif text == "ℹ️ О боте":
+    if text == "ℹ️ О боте":
         await update.message.reply_text(
             "🌴 <b>SEA Travel News Bot</b>\n\n"
             "Новости, погода, визы, отели и курс валют\n"
@@ -640,97 +723,114 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "🇷🇺 Новости переводятся на русский\n🆓 Без рекламы",
             parse_mode="HTML"
         )
-
-# ─── Callback inline ──────────────────────────────────────────────────────────
-
-async def render_hotels_page(q, code: str, city_key: str, city: dict, hotels: list[dict], offset: int):
-    country_name = COUNTRIES.get(code, ("", ""))[1]
-    if not hotels:
-        await q.edit_message_text(
-            fmt_hotels_header(city, country_name, 0),
-            parse_mode="HTML", reply_markup=hotels_result_kb(code, city_key, 0, 0),
-        )
         return
-    page = hotels[offset:offset + HOTEL_PAGE_SIZE]
-    city_en = city.get("en", city["name"])
-    lines = [fmt_hotel_line(offset + j + 1, h, city_en) for j, h in enumerate(page)]
-    text = fmt_hotels_header(city, country_name, len(hotels)) + "\n\n" + "\n".join(lines)
-    await q.edit_message_text(
-        text, parse_mode="HTML", disable_web_page_preview=True,
-        reply_markup=hotels_result_kb(code, city_key, offset, len(hotels)),
-    )
 
-async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    await q.answer()
-    data = q.data
-
-    if data == "countries_root":
-        await q.edit_message_text("🌍 Выбери страну:", reply_markup=countries_kb())
-
-    elif data.startswith("country_"):
-        code = data[8:]
+    # ── Выбор страны ──
+    if text in COUNTRY_LABEL_TO_CODE:
+        code = COUNTRY_LABEL_TO_CODE[text]
         cities = CITIES.get(code, [])
         if len(cities) == 1:
-            # Единственный город страны — сразу открываем его карточку, без лишнего клика
             city = cities[0]
-            await q.edit_message_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb(code, city["key"]))
+            set_state(chat_id, screen="city", country=code, city=city["key"])
+            await update.message.reply_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb())
         else:
-            flag, name = COUNTRIES.get(code, ("", "?"))
-            time_line = f"\n🕐 Сейчас там: {local_time_str(code)}" if local_time_str(code) else ""
-            await q.edit_message_text(
-                f"{flag} <b>{name}</b>{time_line}\n\nВыбери город:",
-                parse_mode="HTML", reply_markup=country_cities_kb(code),
+            set_state(chat_id, screen="cities", country=code, city=None)
+            flag, name = COUNTRIES[code]
+            await update.message.reply_text(
+                f"{flag} <b>{name}</b>\n🕐 Сейчас там: {local_time_str(code)}\n\nВыбери город:",
+                parse_mode="HTML", reply_markup=cities_kb(code),
             )
+        return
 
-    elif data.startswith("city_"):
-        _, code, city_key = data.split("_", 2)
+    # ── Выбор города ──
+    if text in CITY_LABEL_TO_KEY:
+        code, city_key = CITY_LABEL_TO_KEY[text]
         city = find_city(code, city_key)
-        if city:
-            await q.edit_message_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb(code, city_key))
+        set_state(chat_id, screen="city", country=code, city=city_key)
+        await update.message.reply_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb())
+        return
 
-    elif data.startswith("cityhotels_"):
-        _, code, city_key = data.split("_", 2)
-        city = find_city(code, city_key)
-        if not city:
-            await q.edit_message_text("Информация недоступна")
-        else:
-            # Сетевой запрос к Overpass нужен только если пул для этого города
-            # ещё не кэширован — иначе перемешивание мгновенное, без ожидания.
-            if not _city_hotel_cache.get((code, city_key)):
-                await q.edit_message_text(f"⏳ Ищу отели — {city['name']}...")
-            hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
-            await render_hotels_page(q, code, city_key, city, hotels, offset=0)
-
-    elif data.startswith("hotelspage_"):
-        rest, offset_s = data.rsplit("_", 1)
-        _, code, city_key = rest.split("_", 2)
-        city = find_city(code, city_key)
-        hotels = _shown_hotels_cache.get((code, city_key)) or []
-        if city:
-            await render_hotels_page(q, code, city_key, city, hotels, offset=int(offset_s))
-
-    elif data.startswith("weatherall_"):
-        code = data[len("weatherall_"):]
+    # ── Погода по всем городам страны ──
+    if text == "☀️ Погода по всем городам" and state.get("country"):
+        code = state["country"]
         flag, name = COUNTRIES.get(code, ("", "?"))
         w = get_weather_all(code)
-        await q.edit_message_text(f"☀️ <b>Погода — {name}, все города</b>\n\n{w}", parse_mode="HTML")
+        await update.message.reply_text(f"☀️ <b>Погода — {name}, все города</b>\n\n{w}", parse_mode="HTML")
+        return
 
-    elif data.startswith("news_"):
-        country = data[5:]
-        name = COUNTRIES.get(country, ("", ""))[1]
-        await q.edit_message_text("⏳ Собираю новости...")
-        news = fetch_news(country=country)
+    # ── Новости / виза / рейсы (уровень страны, доступны из cities и city) ──
+    if text == "📰 Новости страны" and state.get("country"):
+        code = state["country"]
+        name = COUNTRIES.get(code, ("", ""))[1]
+        msg = await update.message.reply_text("⏳ Собираю новости...")
+        news = fetch_news(country=code)
         for n in news: mark_sent(n["hash"])
-        text = fmt_digest(news, title=f"Новости — {name}")
-        await q.edit_message_text(text, parse_mode="HTML", disable_web_page_preview=True)
+        await msg.edit_text(fmt_digest(news, title=f"Новости — {name}"), parse_mode="HTML", disable_web_page_preview=True)
+        return
 
-    elif data.startswith("visa_"):
-        country = data[5:]
-        await q.edit_message_text(VISA_INFO.get(country, "Информация недоступна"), parse_mode="HTML")
+    if text == "🗺️ Виза" and state.get("country"):
+        await update.message.reply_text(VISA_INFO.get(state["country"], "Информация недоступна"), parse_mode="HTML")
+        return
 
-    elif data == "flights":
-        await q.edit_message_text(FLIGHTS_INFO, parse_mode="HTML")
+    if text == "✈️ Рейсы из Алматы":
+        await update.message.reply_text(FLIGHTS_INFO, parse_mode="HTML")
+        return
+
+    # ── Отели ──
+    if text == "🏨 Отели" and state.get("country") and state.get("city"):
+        code, city_key = state["country"], state["city"]
+        city = find_city(code, city_key)
+        if not _city_hotel_cache.get((code, city_key)):
+            await update.message.reply_text(f"⏳ Ищу отели — {city['name']}...")
+        hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
+        set_state(chat_id, screen="hotels", hotel_offset=0)
+        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
+        return
+
+    if text.startswith("▶️ Ещё") and state.get("screen") == "hotels":
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        hotels = _shown_hotels_cache.get((code, city_key)) or []
+        offset = state.get("hotel_offset", 0) + HOTEL_PAGE_SIZE
+        set_state(chat_id, hotel_offset=offset)
+        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, offset)
+        return
+
+    if text == "🔀 Показать другие 30" and state.get("screen") == "hotels":
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        if not _city_hotel_cache.get((code, city_key)):
+            await update.message.reply_text(f"⏳ Ищу отели — {city['name']}...")
+        hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
+        set_state(chat_id, hotel_offset=0)
+        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
+        return
+
+    # ── Назад ──
+    if text == "⬅️ Назад":
+        screen = state.get("screen", "root")
+        if screen == "hotels":
+            code, city_key = state.get("country"), state.get("city")
+            city = find_city(code, city_key)
+            set_state(chat_id, screen="city")
+            await update.message.reply_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb())
+        elif screen == "city":
+            code = state.get("country")
+            cities = CITIES.get(code, [])
+            if len(cities) > 1:
+                set_state(chat_id, screen="cities", city=None)
+                flag, name = COUNTRIES.get(code, ("", "?"))
+                await update.message.reply_text(f"{flag} <b>{name}</b>\n\nВыбери город:", parse_mode="HTML", reply_markup=cities_kb(code))
+            else:
+                set_state(chat_id, screen="countries", country=None, city=None)
+                await update.message.reply_text("🌍 Выбери страну:", reply_markup=countries_kb())
+        elif screen == "cities":
+            set_state(chat_id, screen="countries", country=None, city=None)
+            await update.message.reply_text("🌍 Выбери страну:", reply_markup=countries_kb())
+        else:
+            set_state(chat_id, screen="root", country=None, city=None)
+            await update.message.reply_text("Главное меню 👇", reply_markup=main_kb())
+        return
 
 # ─── Рассылка ────────────────────────────────────────────────────────────────
 
@@ -760,7 +860,6 @@ def main():
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
     app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CallbackQueryHandler(cb))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     # JobQueue управляется тем же event loop, что и run_polling — в отличие от
     # отдельного AsyncIOScheduler, запущенного до старта polling-цикла, задания
