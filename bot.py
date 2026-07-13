@@ -421,9 +421,54 @@ def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
     name = html.escape(h["name"])
     stars = _stars_str(h.get("stars"))
     q = urllib.parse.quote(f"{h['name']} {city_en}")
-    agoda = f"https://www.agoda.com/search?q={q}"
-    trip = f"https://www.trip.com/hotels/list?keyword={q}"
-    return f"{i}. <b>{name}</b>{stars} — <a href=\"{agoda}\">Agoda</a> · <a href=\"{trip}\">Trip.com</a>"
+    # Agoda/Trip.com не открывали конкретный отель (нет бесплатного текстового
+    # поиска) — Booking.com показывает отфильтрованный список по запросу,
+    # Google Maps почти всегда попадает точно в объект и показывает реальные
+    # рейтинг и отзывы гостей (в отличие от звёздности из OSM).
+    booking = f"https://www.booking.com/searchresults.html?ss={q}"
+    gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
+    return f"{i}. <b>{name}</b>{stars} — <a href=\"{booking}\">Booking.com</a> · <a href=\"{gmaps}\">Google Maps (отзывы)</a>"
+
+# ─── Фото города (гарантированный визуал) ──────────────────────────────────────
+# Фото конкретного отеля есть очень редко (Дананг: 1 из 561!). Зато у самого
+# города фото на Wikimedia Commons находится почти всегда — показываем его
+# один раз в начале списка, честно подписав как фото города, а не отеля.
+
+_city_photo_cache: dict[str, "bytes | None"] = {}
+
+def _search_commons_file(query: str) -> str | None:
+    try:
+        resp = requests.get(
+            "https://commons.wikimedia.org/w/api.php",
+            params={"action": "query", "list": "search", "srsearch": query,
+                    "srnamespace": 6, "format": "json", "srlimit": 1},
+            headers=COMMONS_HEADERS, timeout=12,
+        )
+        resp.raise_for_status()
+        results = resp.json().get("query", {}).get("search", [])
+        return results[0]["title"] if results else None
+    except Exception:
+        return None
+
+def _download_commons_file(title: str) -> bytes | None:
+    try:
+        filename = title.split(":", 1)[1] if ":" in title else title
+        filename_enc = urllib.parse.quote(filename.replace(" ", "_"))
+        url = f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename_enc}?width=1024"
+        resp = requests.get(url, headers=COMMONS_HEADERS, timeout=15)
+        resp.raise_for_status()
+        if not resp.headers.get("Content-Type", "").startswith("image/"):
+            return None
+        return resp.content
+    except Exception:
+        return None
+
+def get_city_photo(city: dict) -> bytes | None:
+    key = city["key"]
+    if key not in _city_photo_cache:
+        title = _search_commons_file(f"{city.get('en', city['name'])} city")
+        _city_photo_cache[key] = _download_commons_file(title) if title else None
+    return _city_photo_cache[key]
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -690,6 +735,13 @@ async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: s
         await ctx.bot.send_message(chat_id, fmt_hotels_header(city, country_name, 0),
                                     parse_mode="HTML", reply_markup=hotels_kb(0, 0))
         return
+    if offset == 0:
+        city_photo = await asyncio.to_thread(get_city_photo, city)
+        if city_photo:
+            try:
+                await ctx.bot.send_photo(chat_id, photo=city_photo, caption=f"{city['icon']} {city['name']}, {country_name}")
+            except Exception as e:
+                log.warning(f"Send city photo failed: {e}")
     page = hotels[offset:offset + HOTEL_PAGE_SIZE]
     await asyncio.to_thread(_resolve_page_photos, page)
     city_en = city.get("en", city["name"])
