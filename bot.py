@@ -334,19 +334,22 @@ def _hotel_rank(h: dict):
 def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
     """Достаёт (с кэшированием) пул отелей города, выдаёт новую случайную
     тридцатку и сортирует её от высокой оценки к низкой. Реальный сетевой
-    запрос к Overpass выполняется только один раз за город на весь процесс —
-    дальше только перемешивание в памяти."""
+    запрос к Overpass кэшируется надолго только при успехе — если все зеркала
+    недоступны, используем резервный список, но НЕ запоминаем его как
+    окончательный результат, чтобы следующая попытка снова сходила в Overpass
+    за настоящими данными, а не показывала одни и те же 3-4 отеля навсегда."""
     city = find_city(country_code, city_key)
     if not city:
         return []
     cache_key = (country_code, city_key)
-    if not _city_hotel_cache.get(cache_key):
+    pool = _city_hotel_cache.get(cache_key)
+    if not pool:
         pool = _fetch_osm_hotels(city["lat"], city["lon"])
-        if not pool:
-            fallback_names = FALLBACK_HOTELS.get(country_code, {}).get(city_key, [])
-            pool = [{"name": n, "stars": None, "wikidata": None, "tag_count": 0} for n in fallback_names]
-        _city_hotel_cache[cache_key] = pool
-    pool = _city_hotel_cache[cache_key]
+        if pool:
+            _city_hotel_cache[cache_key] = pool
+    if not pool:
+        fallback_names = FALLBACK_HOTELS.get(country_code, {}).get(city_key, [])
+        pool = [{"name": n, "stars": None, "wikidata": None, "tag_count": 0} for n in fallback_names]
     if not pool:
         return []
     chosen = random.sample(pool, min(HOTEL_POOL_SHOW, len(pool)))
