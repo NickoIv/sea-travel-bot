@@ -4,9 +4,12 @@ import logging
 import os
 import json
 import hashlib
+import html
+import random
 import urllib.request
 import urllib.parse
 import re
+import requests
 from datetime import datetime, time as dtime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -75,38 +78,25 @@ def local_time_str(country_code: str) -> str:
 
 CITIES = {
     "vn": [
-        {"key": "hanoi", "icon": "🏙", "name": "Ханой", "lat": 21.0285, "lon": 105.8542,
-         "hotels": ["Sofitel Legend Metropole ⭐⭐⭐⭐⭐", "Movenpick Hotel ⭐⭐⭐⭐⭐", "La Siesta Premium ⭐⭐⭐⭐"]},
-        {"key": "da_nang", "icon": "🌉", "name": "Дананг", "lat": 16.0544, "lon": 108.2022,
-         "hotels": ["Intercontinental Sun Peninsula ⭐⭐⭐⭐⭐", "Vinpearl Resort & Spa ⭐⭐⭐⭐⭐"]},
-        {"key": "hoi_an", "icon": "🏮", "name": "Хойан", "lat": 15.8801, "lon": 108.3380,
-         "hotels": ["Anantara Hoi An ⭐⭐⭐⭐⭐", "Almanity Hoi An Wellness Resort ⭐⭐⭐⭐"]},
-        {"key": "nha_trang", "icon": "🏖", "name": "Нячанг", "lat": 12.2388, "lon": 109.1967,
-         "hotels": ["Vinpearl Resort Nha Trang ⭐⭐⭐⭐⭐", "Amiana Resort ⭐⭐⭐⭐⭐"]},
-        {"key": "phu_quoc", "icon": "🏝", "name": "Фукуок", "lat": 10.2899, "lon": 103.9840,
-         "hotels": ["JW Marriott Phu Quoc ⭐⭐⭐⭐⭐", "Premier Residences Phu Quoc ⭐⭐⭐⭐⭐"]},
+        {"key": "hanoi", "icon": "🏙", "name": "Ханой", "en": "Hanoi", "lat": 21.0285, "lon": 105.8542},
+        {"key": "da_nang", "icon": "🌉", "name": "Дананг", "en": "Da Nang", "lat": 16.0544, "lon": 108.2022},
+        {"key": "hoi_an", "icon": "🏮", "name": "Хойан", "en": "Hoi An", "lat": 15.8801, "lon": 108.3380},
+        {"key": "nha_trang", "icon": "🏖", "name": "Нячанг", "en": "Nha Trang", "lat": 12.2388, "lon": 109.1967},
+        {"key": "phu_quoc", "icon": "🏝", "name": "Фукуок", "en": "Phu Quoc", "lat": 10.2899, "lon": 103.9840},
     ],
     "id": [
-        {"key": "denpasar", "icon": "🌆", "name": "Денпасар / Юг Бали", "lat": -8.6705, "lon": 115.2126,
-         "hotels": ["W Bali Seminyak ⭐⭐⭐⭐⭐", "Mulia Resort Nusa Dua ⭐⭐⭐⭐⭐", "Conrad Bali ⭐⭐⭐⭐⭐"]},
-        {"key": "ubud", "icon": "🌿", "name": "Убуд", "lat": -8.5069, "lon": 115.2625,
-         "hotels": ["Four Seasons Sayan ⭐⭐⭐⭐⭐", "Komaneka at Bisma ⭐⭐⭐⭐⭐"]},
-        {"key": "lombok", "icon": "🏝", "name": "Ломбок", "lat": -8.6524, "lon": 116.3240,
-         "hotels": ["The Oberoi Lombok ⭐⭐⭐⭐⭐", "Sheraton Senggigi Beach Resort ⭐⭐⭐⭐"]},
+        {"key": "denpasar", "icon": "🌆", "name": "Денпасар / Юг Бали", "en": "Denpasar Bali", "lat": -8.6705, "lon": 115.2126},
+        {"key": "ubud", "icon": "🌿", "name": "Убуд", "en": "Ubud Bali", "lat": -8.5069, "lon": 115.2625},
+        {"key": "lombok", "icon": "🏝", "name": "Ломбок", "en": "Lombok", "lat": -8.6524, "lon": 116.3240},
     ],
     "sg": [
-        {"key": "singapore", "icon": "🇸🇬", "name": "Сингапур", "lat": 1.3521, "lon": 103.8198,
-         "hotels": ["Marina Bay Sands ⭐⭐⭐⭐⭐", "The Fullerton Hotel ⭐⭐⭐⭐⭐", "Raffles Singapore ⭐⭐⭐⭐⭐"]},
+        {"key": "singapore", "icon": "🇸🇬", "name": "Сингапур", "en": "Singapore", "lat": 1.3521, "lon": 103.8198},
     ],
     "eg": [
-        {"key": "cairo", "icon": "🏛", "name": "Каир", "lat": 30.0444, "lon": 31.2357,
-         "hotels": ["Four Seasons Cairo at Nile Plaza ⭐⭐⭐⭐⭐", "Kempinski Nile Hotel ⭐⭐⭐⭐⭐"]},
-        {"key": "hurghada", "icon": "🏖", "name": "Хургада", "lat": 27.2579, "lon": 33.8116,
-         "hotels": ["Steigenberger Al Dau Beach ⭐⭐⭐⭐⭐", "Baron Palace Sahl Hasheesh ⭐⭐⭐⭐⭐"]},
-        {"key": "sharm", "icon": "🤿", "name": "Шарм-эль-Шейх", "lat": 27.9158, "lon": 34.3300,
-         "hotels": ["Rixos Sharm El Sheikh ⭐⭐⭐⭐⭐", "Four Seasons Sharm El Sheikh ⭐⭐⭐⭐⭐"]},
-        {"key": "luxor", "icon": "🏺", "name": "Луксор", "lat": 25.6872, "lon": 32.6396,
-         "hotels": ["Sofitel Winter Palace Luxor ⭐⭐⭐⭐⭐", "Steigenberger Nile Palace Luxor ⭐⭐⭐⭐"]},
+        {"key": "cairo", "icon": "🏛", "name": "Каир", "en": "Cairo", "lat": 30.0444, "lon": 31.2357},
+        {"key": "hurghada", "icon": "🏖", "name": "Хургада", "en": "Hurghada", "lat": 27.2579, "lon": 33.8116},
+        {"key": "sharm", "icon": "🤿", "name": "Шарм-эль-Шейх", "en": "Sharm El Sheikh", "lat": 27.9158, "lon": 34.3300},
+        {"key": "luxor", "icon": "🏺", "name": "Луксор", "en": "Luxor", "lat": 25.6872, "lon": 32.6396},
     ],
 }
 
@@ -232,6 +222,94 @@ def get_weather_one(name: str, lat: float, lon: float) -> str:
 def get_weather_all(country_code: str) -> str:
     cities = CITIES.get(country_code, [])
     return "\n".join(get_weather_one(c["name"], c["lat"], c["lon"]) for c in cities)
+
+# ─── Отели (OpenStreetMap / Overpass API, без ключа) ──────────────────────────
+# У Agoda и Trip.com нет бесплатного публичного API — ссылки ведут на поиск
+# по названию отеля на их сайтах, а не на гарантированную страницу конкретного
+# объекта. Названия и адреса отелей — реальные, из OpenStreetMap.
+
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
+HOTEL_SEARCH_RADIUS_M = 8000
+HOTEL_SHOW_COUNT = 30
+
+# Кэш кандидатов на процесс: Overpass дёргаем один раз на город, а не при
+# каждом нажатии — дальше просто берём новую случайную тридцатку из пула.
+_city_hotel_cache: dict[tuple, list] = {}
+
+def _fetch_osm_hotels(lat: float, lon: float) -> list[dict]:
+    query = f"""
+[out:json][timeout:25];
+(
+  node["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
+  way["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
+);
+out center tags;
+"""
+    for endpoint in OVERPASS_ENDPOINTS:
+        try:
+            resp = requests.get(
+                endpoint, params={"data": query},
+                headers={"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder)"},
+                timeout=12,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            hotels = []
+            for el in data.get("elements", []):
+                tags = el.get("tags", {})
+                name = tags.get("name")
+                if not name:
+                    continue
+                hotels.append({"name": name[:70], "stars": tags.get("stars")})
+            if hotels:
+                return hotels
+        except Exception as e:
+            log.warning(f"Overpass {endpoint} failed: {e}")
+    return []
+
+def get_city_hotels(country_code: str, city_key: str) -> list[dict]:
+    city = find_city(country_code, city_key)
+    if not city:
+        return []
+    cache_key = (country_code, city_key)
+    if not _city_hotel_cache.get(cache_key):
+        _city_hotel_cache[cache_key] = _fetch_osm_hotels(city["lat"], city["lon"])
+    pool = _city_hotel_cache[cache_key]
+    if not pool:
+        return []
+    return random.sample(pool, min(HOTEL_SHOW_COUNT, len(pool)))
+
+def _stars_str(stars) -> str:
+    try:
+        n = round(float(stars))
+        return " " + "⭐" * max(1, min(n, 5)) if n else ""
+    except (TypeError, ValueError):
+        return ""
+
+def fmt_hotels_header(city: dict, country_name: str, count: int) -> str:
+    header = f"{city['icon']} <b>Отели — {city['name']}</b> ({country_name})"
+    if count:
+        header += f"\n<i>Показано {count} случайных вариантов — нажми «Показать другие», чтобы увидеть новые</i>"
+    else:
+        header += "\n\n😕 Не удалось получить список отелей. Попробуй ещё раз чуть позже."
+    return header
+
+def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
+    name = html.escape(h["name"])
+    stars = _stars_str(h.get("stars"))
+    q = urllib.parse.quote(f"{h['name']} {city_en}")
+    agoda = f"https://www.agoda.com/search?q={q}"
+    trip = f"https://www.trip.com/hotels/list?keyword={q}"
+    return f"{i}. <b>{name}</b>{stars} — <a href=\"{agoda}\">Agoda</a> · <a href=\"{trip}\">Trip.com</a>"
+
+# Telegram режет сообщения на 4096 символов — 30 отелей со ссылками на Agoda и
+# Trip.com в одном сообщении легко превышают лимит (проверено: ~6500 символов
+# на 30 штук). Поэтому список уходит частями по HOTEL_CHUNK_SIZE отелей.
+HOTEL_CHUNK_SIZE = 15
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -375,16 +453,6 @@ def fmt_digest(news_list, title="Дайджест — Вьетнам, Бали, 
     items = "\n\n".join(fmt_item(n, i+1) for i, n in enumerate(news_list))
     return header + items
 
-def fmt_city_hotels(country_code: str, city_key: str) -> str:
-    city = find_city(country_code, city_key)
-    if not city:
-        return "Информация недоступна"
-    _, country_name = COUNTRIES.get(country_code, ("", ""))
-    lines = [f"{city['icon']} <b>Отели — {city['name']}</b> ({country_name})\n"]
-    lines += [f"• {h}" for h in city["hotels"]]
-    lines.append("\n🔍 Бронирование: booking.com / agoda.com")
-    return "\n".join(lines)
-
 def fmt_city_card(country_code: str, city: dict) -> str:
     _, country_name = COUNTRIES.get(country_code, ("", ""))
     tline = local_time_str(country_code)
@@ -436,6 +504,12 @@ def city_kb(country_code: str, city_key: str) -> InlineKeyboardMarkup:
     else:
         rows.append([InlineKeyboardButton("← Страны", callback_data="countries_root")])
     return InlineKeyboardMarkup(rows)
+
+def hotels_result_kb(country_code: str, city_key: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔄 Показать другие 30", callback_data=f"cityhotels_{country_code}_{city_key}")],
+        [InlineKeyboardButton("← Город", callback_data=f"city_{country_code}_{city_key}")],
+    ])
 
 # ─── Команды ─────────────────────────────────────────────────────────────────
 
@@ -545,7 +619,27 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("cityhotels_"):
         _, code, city_key = data.split("_", 2)
-        await q.edit_message_text(fmt_city_hotels(code, city_key), parse_mode="HTML")
+        city = find_city(code, city_key)
+        if not city:
+            await q.edit_message_text("Информация недоступна")
+        else:
+            await q.edit_message_text(f"⏳ Ищу отели — {city['name']}...")
+            hotels = await asyncio.to_thread(get_city_hotels, code, city_key)
+            country_name = COUNTRIES.get(code, ("", ""))[1]
+            header = fmt_hotels_header(city, country_name, len(hotels))
+            if not hotels:
+                await q.edit_message_text(header, parse_mode="HTML", reply_markup=hotels_result_kb(code, city_key))
+                return
+            await q.edit_message_text(header, parse_mode="HTML")
+            city_en = city.get("en", city["name"])
+            for start in range(0, len(hotels), HOTEL_CHUNK_SIZE):
+                chunk = hotels[start:start + HOTEL_CHUNK_SIZE]
+                lines = [fmt_hotel_line(start + j + 1, h, city_en) for j, h in enumerate(chunk)]
+                is_last = start + HOTEL_CHUNK_SIZE >= len(hotels)
+                await q.message.reply_text(
+                    "\n".join(lines), parse_mode="HTML", disable_web_page_preview=True,
+                    reply_markup=hotels_result_kb(code, city_key) if is_last else None,
+                )
 
     elif data.startswith("weatherall_"):
         code = data[len("weatherall_"):]
