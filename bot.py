@@ -10,6 +10,7 @@ import urllib.request
 import urllib.parse
 import re
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time as dtime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -234,54 +235,107 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.private.coffee/api/interpreter",
 ]
 HOTEL_SEARCH_RADIUS_M = 8000
-HOTEL_SHOW_COUNT = 30
+HOTEL_POOL_SHOW = 30   # сколько отелей "раздаём" за один заход (перемешивание)
+HOTEL_PAGE_SIZE = 10   # сколько показываем за раз — дальше "Ещё 10" без похода в сеть
+
+# Небольшой резервный список реальных отелей на случай, если все зеркала
+# Overpass одновременно недоступны — чтобы раздел никогда не был пустым.
+FALLBACK_HOTELS = {
+    "vn": {
+        "hanoi": ["Sofitel Legend Metropole Hanoi", "Movenpick Hotel Hanoi", "La Siesta Premium Hang Be", "Peridot Grand Hotel"],
+        "da_nang": ["InterContinental Danang Sun Peninsula Resort", "Vinpearl Resort & Spa Da Nang", "Furama Resort Danang"],
+        "hoi_an": ["Anantara Hoi An Resort", "Almanity Hoi An Wellness Resort", "Hoi An Ancient House Village Resort"],
+        "nha_trang": ["Vinpearl Resort Nha Trang", "Amiana Resort Nha Trang", "InterContinental Nha Trang"],
+        "phu_quoc": ["JW Marriott Phu Quoc Emerald Bay", "Premier Residences Phu Quoc", "Salinda Resort Phu Quoc"],
+    },
+    "id": {
+        "denpasar": ["W Bali Seminyak", "Mulia Resort Nusa Dua", "Conrad Bali", "The Legian Bali"],
+        "ubud": ["Four Seasons Resort Bali at Sayan", "Komaneka at Bisma", "Mandapa a Ritz-Carlton Reserve"],
+        "lombok": ["The Oberoi Lombok", "Sheraton Senggigi Beach Resort"],
+    },
+    "sg": {
+        "singapore": ["Marina Bay Sands", "The Fullerton Hotel Singapore", "Raffles Singapore", "Capella Singapore"],
+    },
+    "eg": {
+        "cairo": ["Four Seasons Hotel Cairo at Nile Plaza", "Kempinski Nile Hotel Cairo", "Sofitel Cairo Nile El Gezirah"],
+        "hurghada": ["Steigenberger Al Dau Beach Hotel", "Baron Palace Sahl Hasheesh", "Sunrise Grand Select Crystal Bay"],
+        "sharm": ["Rixos Sharm El Sheikh", "Four Seasons Resort Sharm El Sheikh", "Baron Resort Sharm El Sheikh"],
+        "luxor": ["Sofitel Winter Palace Luxor", "Steigenberger Nile Palace Luxor", "Hilton Luxor Resort & Spa"],
+    },
+}
 
 # Кэш кандидатов на процесс: Overpass дёргаем один раз на город, а не при
-# каждом нажатии — дальше просто берём новую случайную тридцатку из пула.
+# каждом нажатии — дальше берём новую случайную тридцатку из уже полученного
+# пула (мгновенно, без обращения к сети).
 _city_hotel_cache: dict[tuple, list] = {}
+# Текущая "выданная" тридцатка на город — нужна, чтобы "Ещё 10" продолжала
+# именно тот же набор, а не мешала его заново на каждой странице.
+_shown_hotels_cache: dict[tuple, list] = {}
 
 def _fetch_osm_hotels(lat: float, lon: float) -> list[dict]:
     query = f"""
-[out:json][timeout:25];
+[out:json][timeout:20];
 (
   node["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
   way["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
 );
 out center tags;
 """
-    for endpoint in OVERPASS_ENDPOINTS:
+    def _try(endpoint):
+        resp = requests.get(
+            endpoint, params={"data": query},
+            headers={"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder)"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    # Опрашиваем все зеркала параллельно и берём первый успешный ответ —
+    # публичные зеркала Overpass нестабильны, по очереди можно ждать до
+    # минуты, если они все одновременно перегружены.
+    with ThreadPoolExecutor(max_workers=len(OVERPASS_ENDPOINTS)) as pool:
+        futures = {pool.submit(_try, ep): ep for ep in OVERPASS_ENDPOINTS}
         try:
-            resp = requests.get(
-                endpoint, params={"data": query},
-                headers={"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder)"},
-                timeout=12,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            hotels = []
-            for el in data.get("elements", []):
-                tags = el.get("tags", {})
-                name = tags.get("name")
-                if not name:
+            for future in as_completed(futures, timeout=16):
+                endpoint = futures[future]
+                try:
+                    data = future.result()
+                except Exception as e:
+                    log.warning(f"Overpass {endpoint} failed: {e}")
                     continue
-                hotels.append({"name": name[:70], "stars": tags.get("stars")})
-            if hotels:
-                return hotels
+                hotels = []
+                for el in data.get("elements", []):
+                    tags = el.get("tags", {})
+                    name = tags.get("name")
+                    if not name:
+                        continue
+                    hotels.append({"name": name[:70], "stars": tags.get("stars")})
+                if hotels:
+                    return hotels
         except Exception as e:
-            log.warning(f"Overpass {endpoint} failed: {e}")
+            log.warning(f"Overpass mirrors all timed out: {e}")
     return []
 
-def get_city_hotels(country_code: str, city_key: str) -> list[dict]:
+def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
+    """Достаёт (с кэшированием) пул отелей города и выдаёт новую случайную
+    тридцатку. Реальный сетевой запрос к Overpass выполняется только один
+    раз за город на весь процесс — дальше только перемешивание в памяти."""
     city = find_city(country_code, city_key)
     if not city:
         return []
     cache_key = (country_code, city_key)
     if not _city_hotel_cache.get(cache_key):
-        _city_hotel_cache[cache_key] = _fetch_osm_hotels(city["lat"], city["lon"])
+        pool = _fetch_osm_hotels(city["lat"], city["lon"])
+        if not pool:
+            fallback_names = FALLBACK_HOTELS.get(country_code, {}).get(city_key, [])
+            pool = [{"name": n, "stars": None} for n in fallback_names]
+        _city_hotel_cache[cache_key] = pool
     pool = _city_hotel_cache[cache_key]
     if not pool:
         return []
-    return random.sample(pool, min(HOTEL_SHOW_COUNT, len(pool)))
+    chosen = random.sample(pool, min(HOTEL_POOL_SHOW, len(pool)))
+    _shown_hotels_cache[cache_key] = chosen
+    return chosen
 
 def _stars_str(stars) -> str:
     try:
@@ -293,7 +347,7 @@ def _stars_str(stars) -> str:
 def fmt_hotels_header(city: dict, country_name: str, count: int) -> str:
     header = f"{city['icon']} <b>Отели — {city['name']}</b> ({country_name})"
     if count:
-        header += f"\n<i>Показано {count} случайных вариантов — нажми «Показать другие», чтобы увидеть новые</i>"
+        header += f"\n<i>Показано {count} вариантов — жми «Показать другие», чтобы увидеть новые</i>"
     else:
         header += "\n\n😕 Не удалось получить список отелей. Попробуй ещё раз чуть позже."
     return header
@@ -305,11 +359,6 @@ def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
     agoda = f"https://www.agoda.com/search?q={q}"
     trip = f"https://www.trip.com/hotels/list?keyword={q}"
     return f"{i}. <b>{name}</b>{stars} — <a href=\"{agoda}\">Agoda</a> · <a href=\"{trip}\">Trip.com</a>"
-
-# Telegram режет сообщения на 4096 символов — 30 отелей со ссылками на Agoda и
-# Trip.com в одном сообщении легко превышают лимит (проверено: ~6500 символов
-# на 30 штук). Поэтому список уходит частями по HOTEL_CHUNK_SIZE отелей.
-HOTEL_CHUNK_SIZE = 15
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -505,11 +554,17 @@ def city_kb(country_code: str, city_key: str) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton("← Страны", callback_data="countries_root")])
     return InlineKeyboardMarkup(rows)
 
-def hotels_result_kb(country_code: str, city_key: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Показать другие 30", callback_data=f"cityhotels_{country_code}_{city_key}")],
-        [InlineKeyboardButton("← Город", callback_data=f"city_{country_code}_{city_key}")],
-    ])
+def hotels_result_kb(country_code: str, city_key: str, offset: int, total: int) -> InlineKeyboardMarkup:
+    rows = []
+    next_offset = offset + HOTEL_PAGE_SIZE
+    if next_offset < total:
+        rows.append([InlineKeyboardButton(
+            f"▶️ Ещё {min(HOTEL_PAGE_SIZE, total - next_offset)}",
+            callback_data=f"hotelspage_{country_code}_{city_key}_{next_offset}",
+        )])
+    rows.append([InlineKeyboardButton("🔀 Показать другие 30", callback_data=f"cityhotels_{country_code}_{city_key}")])
+    rows.append([InlineKeyboardButton("← Город", callback_data=f"city_{country_code}_{city_key}")])
+    return InlineKeyboardMarkup(rows)
 
 # ─── Команды ─────────────────────────────────────────────────────────────────
 
@@ -588,6 +643,23 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ─── Callback inline ──────────────────────────────────────────────────────────
 
+async def render_hotels_page(q, code: str, city_key: str, city: dict, hotels: list[dict], offset: int):
+    country_name = COUNTRIES.get(code, ("", ""))[1]
+    if not hotels:
+        await q.edit_message_text(
+            fmt_hotels_header(city, country_name, 0),
+            parse_mode="HTML", reply_markup=hotels_result_kb(code, city_key, 0, 0),
+        )
+        return
+    page = hotels[offset:offset + HOTEL_PAGE_SIZE]
+    city_en = city.get("en", city["name"])
+    lines = [fmt_hotel_line(offset + j + 1, h, city_en) for j, h in enumerate(page)]
+    text = fmt_hotels_header(city, country_name, len(hotels)) + "\n\n" + "\n".join(lines)
+    await q.edit_message_text(
+        text, parse_mode="HTML", disable_web_page_preview=True,
+        reply_markup=hotels_result_kb(code, city_key, offset, len(hotels)),
+    )
+
 async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -623,23 +695,20 @@ async def cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not city:
             await q.edit_message_text("Информация недоступна")
         else:
-            await q.edit_message_text(f"⏳ Ищу отели — {city['name']}...")
-            hotels = await asyncio.to_thread(get_city_hotels, code, city_key)
-            country_name = COUNTRIES.get(code, ("", ""))[1]
-            header = fmt_hotels_header(city, country_name, len(hotels))
-            if not hotels:
-                await q.edit_message_text(header, parse_mode="HTML", reply_markup=hotels_result_kb(code, city_key))
-                return
-            await q.edit_message_text(header, parse_mode="HTML")
-            city_en = city.get("en", city["name"])
-            for start in range(0, len(hotels), HOTEL_CHUNK_SIZE):
-                chunk = hotels[start:start + HOTEL_CHUNK_SIZE]
-                lines = [fmt_hotel_line(start + j + 1, h, city_en) for j, h in enumerate(chunk)]
-                is_last = start + HOTEL_CHUNK_SIZE >= len(hotels)
-                await q.message.reply_text(
-                    "\n".join(lines), parse_mode="HTML", disable_web_page_preview=True,
-                    reply_markup=hotels_result_kb(code, city_key) if is_last else None,
-                )
+            # Сетевой запрос к Overpass нужен только если пул для этого города
+            # ещё не кэширован — иначе перемешивание мгновенное, без ожидания.
+            if not _city_hotel_cache.get((code, city_key)):
+                await q.edit_message_text(f"⏳ Ищу отели — {city['name']}...")
+            hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
+            await render_hotels_page(q, code, city_key, city, hotels, offset=0)
+
+    elif data.startswith("hotelspage_"):
+        rest, offset_s = data.rsplit("_", 1)
+        _, code, city_key = rest.split("_", 2)
+        city = find_city(code, city_key)
+        hotels = _shown_hotels_cache.get((code, city_key)) or []
+        if city:
+            await render_hotels_page(q, code, city_key, city, hotels, offset=int(offset_s))
 
     elif data.startswith("weatherall_"):
         code = data[len("weatherall_"):]
