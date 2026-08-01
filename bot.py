@@ -22,9 +22,15 @@ from telegram.ext import (
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 DATA_FILE = Path("sea_bot_data.json")
-SCHEDULE_HOUR_UTC = 5
-SCHEDULE_MINUTE_UTC = 0
 MAX_NEWS = 8
+
+# ── Cloud Run / webhook-режим ──────────────────────────────────────────────
+# Если GCS_BUCKET не задан — бот работает как раньше, локальным polling'ом
+# (main() ниже сам выбирает режим). Все три переменные задаются в Cloud Run.
+GCS_BUCKET = os.getenv("GCS_BUCKET", "")
+GCS_DATA_BLOB = "sea_bot_data.json"
+DAILY_CRON_SECRET = os.getenv("DAILY_CRON_SECRET", "")
+PORT = int(os.getenv("PORT", "8080"))
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -499,14 +505,39 @@ def get_rates() -> str:
         return "💱 Курс валют временно недоступен."
 
 # ─── Хранилище ────────────────────────────────────────────────────────────────
+# На Cloud Run файловая система контейнера эфемерна — при каждом перезапуске
+# (а он происходит часто, инстансы масштабируются до нуля) локальный файл
+# обнулился бы. Поэтому если задан GCS_BUCKET, храним sea_bot_data.json в
+# Google Cloud Storage; если нет (например, локальный запуск) — как раньше,
+# обычным файлом рядом со скриптом.
+
+def _empty_data():
+    return {"subscribers": [], "sent_hashes": []}
 
 def load_data():
+    if GCS_BUCKET:
+        try:
+            from google.cloud import storage
+            blob = storage.Client().bucket(GCS_BUCKET).blob(GCS_DATA_BLOB)
+            if blob.exists():
+                return json.loads(blob.download_as_text())
+        except Exception as e:
+            log.warning(f"GCS load failed: {e}")
+        return _empty_data()
     if DATA_FILE.exists():
         with open(DATA_FILE, encoding="utf-8") as f:
             return json.load(f)
-    return {"subscribers": [], "sent_hashes": []}
+    return _empty_data()
 
 def save_data(data):
+    if GCS_BUCKET:
+        try:
+            from google.cloud import storage
+            blob = storage.Client().bucket(GCS_BUCKET).blob(GCS_DATA_BLOB)
+            blob.upload_from_string(json.dumps(data, ensure_ascii=False, indent=2), content_type="application/json")
+        except Exception as e:
+            log.warning(f"GCS save failed: {e}")
+        return
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -901,7 +932,10 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 # ─── Рассылка ────────────────────────────────────────────────────────────────
 
-async def send_daily(ctx: ContextTypes.DEFAULT_TYPE):
+async def send_daily_digest(bot):
+    """Общее тело ежедневной рассылки — вызывается либо из JobQueue (локальный
+    polling-режим), либо из HTTP /cron/daily, который дёргает Cloud Scheduler
+    (Cloud Run-режим, где нет собственного постоянно работающего планировщика)."""
     data = load_data()
     if not data["subscribers"]: return
     news = fetch_news()
@@ -910,17 +944,26 @@ async def send_daily(ctx: ContextTypes.DEFAULT_TYPE):
     for n in news: mark_sent(n["hash"])
     for uid in data["subscribers"]:
         try:
-            await ctx.bot.send_message(uid, text, parse_mode="HTML", disable_web_page_preview=True)
+            await bot.send_message(uid, text, parse_mode="HTML", disable_web_page_preview=True)
             await asyncio.sleep(0.05)
         except Exception as e:
             log.warning(f"Send error {uid}: {e}")
 
-# ─── Запуск ──────────────────────────────────────────────────────────────────
+async def send_daily_job(ctx: ContextTypes.DEFAULT_TYPE):
+    """Обёртка под сигнатуру callback'а JobQueue (используется только в
+    локальном polling-режиме)."""
+    await send_daily_digest(ctx.bot)
 
-def main():
-    if not BOT_TOKEN:
-        print("❌ Укажи BOT_TOKEN!")
-        return
+# ─── Запуск ──────────────────────────────────────────────────────────────────
+# Cloud Run сам прописывает переменную K_SERVICE — по ней автоматически
+# выбирается режим: локально (её нет) бот работает как раньше через
+# run_polling + JobQueue; на Cloud Run — через вебхук на HTTP-сервере aiohttp,
+# а ежедневную рассылку по расписанию дёргает Cloud Scheduler HTTP-запросом
+# на /cron/daily (свой процесс-планировщик в контейнере, который может в
+# любой момент "уснуть" при простое, для этого не подходит).
+IS_CLOUD_RUN = bool(os.getenv("K_SERVICE"))
+
+def build_app() -> Application:
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
@@ -928,15 +971,67 @@ def main():
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    return app
+
+def run_polling_mode():
+    app = build_app()
     # JobQueue управляется тем же event loop, что и run_polling — в отличие от
     # отдельного AsyncIOScheduler, запущенного до старта polling-цикла, задания
     # здесь гарантированно срабатывают по расписанию.
     app.job_queue.run_daily(
-        send_daily,
-        time=dtime(hour=SCHEDULE_HOUR_UTC, minute=SCHEDULE_MINUTE_UTC, tzinfo=timezone.utc),
+        send_daily_job,
+        time=dtime(hour=5, minute=0, tzinfo=timezone.utc),  # 10:00 Алматы
     )
-    log.info("🌴 SEA Travel News Bot запущен!")
+    log.info("🌴 SEA Travel News Bot запущен (polling)!")
     app.run_polling(drop_pending_updates=True)
+
+def run_webhook_mode():
+    from aiohttp import web
+
+    app = build_app()
+    webhook_path = f"/webhook/{BOT_TOKEN}"
+
+    async def handle_webhook(request: web.Request):
+        data = await request.json()
+        update = Update.de_json(data, app.bot)
+        await app.update_queue.put(update)
+        return web.Response(status=200)
+
+    async def handle_cron(request: web.Request):
+        if DAILY_CRON_SECRET and request.headers.get("X-Cron-Secret") != DAILY_CRON_SECRET:
+            return web.Response(status=403, text="forbidden")
+        await send_daily_digest(app.bot)
+        return web.Response(status=200, text="ok")
+
+    async def handle_health(request: web.Request):
+        return web.Response(status=200, text="ok")
+
+    async def run():
+        await app.initialize()
+        await app.start()
+        web_app = web.Application()
+        web_app.add_routes([
+            web.post(webhook_path, handle_webhook),
+            web.post("/cron/daily", handle_cron),
+            web.get("/", handle_health),
+        ])
+        runner = web.AppRunner(web_app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", PORT)
+        await site.start()
+        log.info(f"🌴 SEA Travel News Bot запущен (webhook, порт {PORT})!")
+        await asyncio.Event().wait()  # держим процесс живым
+
+    asyncio.run(run())
+
+def main():
+    if not BOT_TOKEN:
+        print("❌ Укажи BOT_TOKEN!")
+        return
+    if IS_CLOUD_RUN:
+        run_webhook_mode()
+    else:
+        run_polling_mode()
 
 if __name__ == "__main__":
     main()
