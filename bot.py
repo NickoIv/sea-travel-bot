@@ -24,13 +24,19 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 DATA_FILE = Path("sea_bot_data.json")
 MAX_NEWS = 8
 
-# ── Cloud Run / webhook-режим ──────────────────────────────────────────────
-# Если GCS_BUCKET не задан — бот работает как раньше, локальным polling'ом
-# (main() ниже сам выбирает режим). Все три переменные задаются в Cloud Run.
-GCS_BUCKET = os.getenv("GCS_BUCKET", "")
-GCS_DATA_BLOB = "sea_bot_data.json"
+# ── Webhook-режим (Render/аналоги) ──────────────────────────────────────────
+# Без явного WEBHOOK_MODE=1 (или запуска на платформе, которая сама
+# прописывает свою переменную) бот работает как раньше, локальным polling'ом.
+WEBHOOK_MODE = bool(os.getenv("WEBHOOK_MODE") or os.getenv("RENDER") or os.getenv("K_SERVICE"))
 DAILY_CRON_SECRET = os.getenv("DAILY_CRON_SECRET", "")
 PORT = int(os.getenv("PORT", "8080"))
+
+# ── Хранилище: Upstash Redis (бесплатно, без карты, REST API) ──────────────
+# Без карты нельзя использовать Google Cloud Storage — Upstash делает то же
+# самое (переживает перезапуски контейнера) без привязки платёжных данных.
+UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL", "")
+UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN", "")
+UPSTASH_KEY = "sea_bot_data"
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -514,15 +520,25 @@ def get_rates() -> str:
 def _empty_data():
     return {"subscribers": [], "sent_hashes": []}
 
+def _upstash_cmd(*args):
+    """Универсальный REST-эндпоинт Upstash: POST списка команд Redis в теле
+    запроса — надёжнее, чем URL-путь, не ловит проблемы с экранированием
+    спецсимволов внутри JSON-значения."""
+    resp = requests.post(
+        UPSTASH_URL, headers={"Authorization": f"Bearer {UPSTASH_TOKEN}"},
+        json=list(args), timeout=8,
+    )
+    resp.raise_for_status()
+    return resp.json().get("result")
+
 def load_data():
-    if GCS_BUCKET:
+    if UPSTASH_URL and UPSTASH_TOKEN:
         try:
-            from google.cloud import storage
-            blob = storage.Client().bucket(GCS_BUCKET).blob(GCS_DATA_BLOB)
-            if blob.exists():
-                return json.loads(blob.download_as_text())
+            raw = _upstash_cmd("GET", UPSTASH_KEY)
+            if raw:
+                return json.loads(raw)
         except Exception as e:
-            log.warning(f"GCS load failed: {e}")
+            log.warning(f"Upstash load failed: {e}")
         return _empty_data()
     if DATA_FILE.exists():
         with open(DATA_FILE, encoding="utf-8") as f:
@@ -530,13 +546,11 @@ def load_data():
     return _empty_data()
 
 def save_data(data):
-    if GCS_BUCKET:
+    if UPSTASH_URL and UPSTASH_TOKEN:
         try:
-            from google.cloud import storage
-            blob = storage.Client().bucket(GCS_BUCKET).blob(GCS_DATA_BLOB)
-            blob.upload_from_string(json.dumps(data, ensure_ascii=False, indent=2), content_type="application/json")
+            _upstash_cmd("SET", UPSTASH_KEY, json.dumps(data, ensure_ascii=False))
         except Exception as e:
-            log.warning(f"GCS save failed: {e}")
+            log.warning(f"Upstash save failed: {e}")
         return
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -955,13 +969,12 @@ async def send_daily_job(ctx: ContextTypes.DEFAULT_TYPE):
     await send_daily_digest(ctx.bot)
 
 # ─── Запуск ──────────────────────────────────────────────────────────────────
-# Cloud Run сам прописывает переменную K_SERVICE — по ней автоматически
-# выбирается режим: локально (её нет) бот работает как раньше через
-# run_polling + JobQueue; на Cloud Run — через вебхук на HTTP-сервере aiohttp,
-# а ежедневную рассылку по расписанию дёргает Cloud Scheduler HTTP-запросом
-# на /cron/daily (свой процесс-планировщик в контейнере, который может в
-# любой момент "уснуть" при простое, для этого не подходит).
-IS_CLOUD_RUN = bool(os.getenv("K_SERVICE"))
+# Локально (WEBHOOK_MODE не задан и платформа не прописала свою переменную)
+# бот работает как раньше через run_polling + JobQueue. На хостинге вроде
+# Render — через вебхук на HTTP-сервере aiohttp, а ежедневную рассылку
+# дёргает внешний бесплатный крон (cron-job.org) HTTP-запросом на
+# /cron/daily — свой процесс-планировщик в контейнере, который может
+# "уснуть" при простое (бесплатный тариф Render), для этого не подходит.
 
 def build_app() -> Application:
     app = Application.builder().token(BOT_TOKEN).build()
@@ -1028,7 +1041,7 @@ def main():
     if not BOT_TOKEN:
         print("❌ Укажи BOT_TOKEN!")
         return
-    if IS_CLOUD_RUN:
+    if WEBHOOK_MODE:
         run_webhook_mode()
     else:
         run_polling_mode()
