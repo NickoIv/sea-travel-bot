@@ -720,6 +720,21 @@ def city_kb():
         resize_keyboard=True, is_persistent=True,
     )
 
+def current_kb(state: dict):
+    """Клавиатура текущего экрана — используется, чтобы прикреплять её к
+    любому ответу (курс валют, виза, рейсы и т.д.), а не только к переходам
+    между экранами. Reply-клавиатура в Telegram и так не пропадает без явного
+    ReplyKeyboardRemove, но явное прикрепление к каждому сообщению исключает
+    любые edge-cases с её сворачиванием в некоторых клиентах."""
+    screen = state.get("screen", "root")
+    if screen == "countries":
+        return countries_kb()
+    if screen == "cities":
+        return cities_kb(state.get("country"))
+    if screen in ("city", "hotels"):
+        return city_kb()
+    return main_kb()
+
 def hotels_kb(offset: int, total: int):
     rows = []
     next_offset = offset + HOTEL_PAGE_SIZE
@@ -747,24 +762,24 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/subscribe — подписаться на дайджест\n"
         "/unsubscribe — отписаться\n"
         "/status — статус подписки",
-        parse_mode="HTML"
+        parse_mode="HTML", reply_markup=main_kb(),
     )
 
 async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     add_subscriber(update.effective_user.id)
     await update.message.reply_text(
         "✅ Подписка оформлена!\nДайджест каждое утро в <b>10:00 по Алматы</b>.\n\nОтписаться: /unsubscribe",
-        parse_mode="HTML"
+        parse_mode="HTML", reply_markup=main_kb(),
     )
 
 async def cmd_unsubscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     remove_subscriber(update.effective_user.id)
-    await update.message.reply_text("🔕 Отписан. Снова: /subscribe")
+    await update.message.reply_text("🔕 Отписан. Снова: /subscribe", reply_markup=main_kb())
 
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = load_data()
     status = "✅ Подписан" if is_subscribed(update.effective_user.id) else "🔕 Не подписан"
-    await update.message.reply_text(f"📊 Статус: {status}\nПодписчиков: {len(data['subscribers'])}", parse_mode="HTML")
+    await update.message.reply_text(f"📊 Статус: {status}\nПодписчиков: {len(data['subscribers'])}", parse_mode="HTML", reply_markup=main_kb())
 
 # ─── Отели: отправка страницы (текст + фото где есть) ─────────────────────────
 
@@ -823,14 +838,14 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "💱 Курс валют":
-        await update.message.reply_text(get_rates(), parse_mode="HTML")
+        await update.message.reply_text(get_rates(), parse_mode="HTML", reply_markup=main_kb())
         return
 
     if text == "🔔 Подписаться":
         add_subscriber(chat_id)
         await update.message.reply_text(
             "✅ Подписка оформлена!\nДайджест каждое утро в <b>10:00 по Алматы</b>.",
-            parse_mode="HTML"
+            parse_mode="HTML", reply_markup=main_kb(),
         )
         return
 
@@ -841,7 +856,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "по Вьетнаму, Индонезии (Бали), Сингапуру и Египту.\n\n"
             "📅 Дайджест ежедневно в 10:00 по Алматы\n"
             "🇷🇺 Новости переводятся на русский\n🆓 Без рекламы",
-            parse_mode="HTML"
+            parse_mode="HTML", reply_markup=main_kb(),
         )
         return
 
@@ -881,11 +896,14 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "🗺️ Виза" and state.get("country"):
-        await update.message.reply_text(VISA_INFO.get(state["country"], "Информация недоступна"), parse_mode="HTML")
+        await update.message.reply_text(
+            VISA_INFO.get(state["country"], "Информация недоступна"),
+            parse_mode="HTML", reply_markup=current_kb(state),
+        )
         return
 
     if text == "✈️ Рейсы из Алматы":
-        await update.message.reply_text(FLIGHTS_INFO, parse_mode="HTML")
+        await update.message.reply_text(FLIGHTS_INFO, parse_mode="HTML", reply_markup=current_kb(state))
         return
 
     # ── Отели ──

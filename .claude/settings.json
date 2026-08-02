@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X GET https://api.render.com/v1/owners -H 'Authorization: Bearer rnd_1wn9Rvt5UXk1HwcnG0H21NsB2yEB' -H 'Accept: application/json')",
+      "Bash(curl -s -X GET https://api.render.com/v1/owners/tea-d9mvh5nqj5pc73dt226g -H 'Authorization: Bearer rnd_1wn9Rvt5UXk1HwcnG0H21NsB2yEB' -H 'Accept: application/json')",
+      "Bash(curl -s -X GET https://api.render.com/v1/services?limit=20 -H 'Authorization: Bearer rnd_1wn9Rvt5UXk1HwcnG0H21NsB2yEB' -H 'Accept: application/json')",
+      "Bash(curl -s \"https://api.github.com/repos/NickoIv/sea-travel-bot\")",
+      "Bash(exit 0)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" \"https://sea-travel-bot.onrender.com/\")",
+      "Bash(curl -s \"https://api.telegram.org/bot8681299780:AAGcB1yhaY8ZKP_AfO6JYWx2asjMMKF5Yew/setWebhook?url=https://sea-travel-bot.onrender.com/webhook/8681299780:AAGcB1yhaY8ZKP_AfO6JYWx2asjMMKF5Yew\")",
+      "Bash(curl -s 'https://api.render.com/v1/logs?ownerId=tea-d9mvh5nqj5pc73dt226g&resource=srv-d9nna0bncjis73aiasjg&startTime=2026-08-02T17:05:50Z&endTime=__TRACKED_VAR__&limit=50' -H 'Authorization: Bearer rnd_1wn9Rvt5UXk1HwcnG0H21NsB2yEB')",
+      "Bash(curl -s \"https://api.telegram.org/bot8681299780:AAGcB1yhaY8ZKP_AfO6JYWx2asjMMKF5Yew/getMe\")"
+    ]
+  }
+}
