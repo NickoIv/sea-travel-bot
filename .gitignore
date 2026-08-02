@@ -3,3 +3,5 @@
 .env
 sea_bot_data.json
 hotels.db
+
+.claude/
