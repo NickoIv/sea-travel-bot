@@ -1032,8 +1032,12 @@ def run_webhook_mode():
     async def handle_cron(request: web.Request):
         if DAILY_CRON_SECRET and request.headers.get("X-Cron-Secret") != DAILY_CRON_SECRET:
             return web.Response(status=403, text="forbidden")
-        await send_daily_digest(app.bot)
-        return web.Response(status=200, text="ok")
+        # Сборка новостей + перевод каждой через Google Translate может занять
+        # больше 30 сек — это дольше таймаута большинства внешних крон-сервисов
+        # (в т.ч. cron-job.org). Поэтому отвечаем сразу, а рассылку запускаем
+        # фоновой задачей — cron просто "будит" эндпоинт, не дожидаясь результата.
+        asyncio.create_task(send_daily_digest(app.bot))
+        return web.Response(status=200, text="started")
 
     async def handle_health(request: web.Request):
         return web.Response(status=200, text="ok")
