@@ -58,8 +58,9 @@ COUNTRY_KEYWORDS = {
     "id": ["indonesia","bali","jakarta","lombok","komodo","ubud","denpasar","seminyak","canggu","yogyakarta","java"],
     "sg": ["singapore","sentosa","changi"],
     "eg": ["egypt","cairo","luxor","aswan","hurghada","sharm el sheikh","alexandria","giza","pyramids","red sea","nile"],
+    "cn": ["china","hainan","sanya","haikou"],
 }
-ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["eg"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
+ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["eg"] + COUNTRY_KEYWORDS["cn"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
 
 # Таймзоны для отображения локального времени — единая на страну (все города
 # каждой страны здесь лежат в одном часовом поясе, отдельная таблица не нужна)
@@ -68,6 +69,7 @@ TIMEZONES = {
     "id": "Asia/Makassar",
     "sg": "Asia/Singapore",
     "eg": "Africa/Cairo",
+    "cn": "Asia/Shanghai",
 }
 
 # Флаги и названия стран — используется в меню "Страны" и в подписях разделов
@@ -76,6 +78,7 @@ COUNTRIES = {
     "id": ("🇮🇩", "Индонезия"),
     "sg": ("🇸🇬", "Сингапур"),
     "eg": ("🇪🇬", "Египет"),
+    "cn": ("🇨🇳", "Китай"),
 }
 
 def local_time_str(country_code: str) -> str:
@@ -110,6 +113,9 @@ CITIES = {
         {"key": "hurghada", "icon": "🏖", "name": "Хургада", "en": "Hurghada", "lat": 27.2579, "lon": 33.8116},
         {"key": "sharm", "icon": "🤿", "name": "Шарм-эль-Шейх", "en": "Sharm El Sheikh", "lat": 27.9158, "lon": 34.3300},
         {"key": "luxor", "icon": "🏺", "name": "Луксор", "en": "Luxor", "lat": 25.6872, "lon": 32.6396},
+    ],
+    "cn": [
+        {"key": "hainan", "icon": "🏝", "name": "Хайнань (Санья)", "en": "Sanya Hainan", "lat": 18.2528, "lon": 109.5119},
     ],
 }
 
@@ -162,6 +168,18 @@ VISA_INFO = {
         "• Срок оформления: 3-7 дней\n\n"
         "📄 Нужен загранпаспорт, действующий минимум 6 месяцев"
     ),
+    "cn": (
+        "🇨🇳 <b>Китай (Хайнань) — условия въезда</b>\n\n"
+        "🟢 <b>Безвизовый режим для острова Хайнань</b>: граждане ряда стран могут "
+        "находиться на острове до <b>30 дней</b> без визы — действует только для "
+        "Хайнаня, не для материкового Китая\n"
+        "⚠️ Список стран-участниц периодически меняется — <b>обязательно сверь себя "
+        "по актуальному списку</b> перед поездкой, для Казахстана точный статус "
+        "уточняй на официальном портале\n\n"
+        "📋 <b>Материковый Китай</b> (если планируешь выезд за пределы Хайнаня):\n"
+        "• Нужна обычная виза, оформляется в посольстве/консульстве КНР заранее\n\n"
+        "📄 Нужен загранпаспорт, действующий минимум 6 месяцев"
+    ),
 }
 
 FLIGHTS_INFO = (
@@ -181,6 +199,9 @@ FLIGHTS_INFO = (
     "🇪🇬 <b>Алматы → Египет (HRG/SSH)</b>\n"
     "• Чартерные и прямые рейсы в Хургаду и Шарм-эль-Шейх (сезонно)\n"
     "• В среднем: от $500–800 туда-обратно\n\n"
+    "🇨🇳 <b>Алматы → Хайнань (Санья, SYX)</b>\n"
+    "• Обычно с пересадкой через Урумчи, Пекин или Гуанчжоу\n"
+    "• В среднем: от $400–700 туда-обратно\n\n"
     "🔍 Поиск билетов: aviasales.ru / skyscanner.com / google.com/flights"
 )
 
@@ -270,6 +291,9 @@ FALLBACK_HOTELS = {
         "hurghada": ["Steigenberger Al Dau Beach Hotel", "Baron Palace Sahl Hasheesh", "Sunrise Grand Select Crystal Bay"],
         "sharm": ["Rixos Sharm El Sheikh", "Four Seasons Resort Sharm El Sheikh", "Baron Resort Sharm El Sheikh"],
         "luxor": ["Sofitel Winter Palace Luxor", "Steigenberger Nile Palace Luxor", "Hilton Luxor Resort & Spa"],
+    },
+    "cn": {
+        "hainan": ["Mandarin Oriental Sanya", "The Ritz-Carlton Sanya, Yalong Bay", "Sheraton Sanya Resort", "Sanya Marriott Hotel Dadonghai Bay"],
     },
 }
 
@@ -480,6 +504,126 @@ def get_city_photo(city: dict) -> bytes | None:
         title = _search_commons_file(f"{city.get('en', city['name'])} city")
         _city_photo_cache[key] = _download_commons_file(title) if title else None
     return _city_photo_cache[key]
+
+# ─── Достопримечательности и кафе (тот же принцип, что и у отелей) ─────────────
+# Скраппинг Trip.com не используем: сайт защищён от автоматического сбора
+# и требует рендеринга JS, а прямые поисковые ссылки на Trip.com уже не
+# сработали для отелей (замена на Google Maps). Здесь та же логика: реальные
+# места — из OpenStreetMap через Overpass (бесплатно, без ключа), ссылка —
+# на Google Maps с настоящими рейтингом и отзывами.
+
+POI_KINDS = {
+    "attractions": {
+        "icon": "🏛", "label": "Достопримечательности",
+        "osm_filter": '"tourism"~"^(attraction|museum|viewpoint|gallery|zoo|theme_park|artwork)$"',
+        "photos": True,
+    },
+    "cafes": {
+        "icon": "☕", "label": "Кафе и рестораны",
+        "osm_filter": '"amenity"~"^(cafe|restaurant)$"',
+        "photos": False,
+    },
+}
+POI_SEARCH_RADIUS_M = 6000
+POI_POOL_SHOW = 30
+POI_PAGE_SIZE = 10
+
+_city_poi_cache: dict[tuple, list] = {}
+_shown_poi_cache: dict[tuple, list] = {}
+
+def _fetch_osm_poi(kind: str, lat: float, lon: float) -> list[dict]:
+    osm_filter = POI_KINDS[kind]["osm_filter"]
+    query = f"""
+[out:json][timeout:20];
+(
+  node[{osm_filter}](around:{POI_SEARCH_RADIUS_M},{lat},{lon});
+  way[{osm_filter}](around:{POI_SEARCH_RADIUS_M},{lat},{lon});
+);
+out center tags;
+"""
+    def _try(endpoint):
+        resp = requests.get(
+            endpoint, params={"data": query},
+            headers={"User-Agent": "sea-travel-bot/1.0 (Telegram POI finder)"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    with ThreadPoolExecutor(max_workers=len(OVERPASS_ENDPOINTS)) as pool:
+        futures = {pool.submit(_try, ep): ep for ep in OVERPASS_ENDPOINTS}
+        try:
+            for future in as_completed(futures, timeout=16):
+                endpoint = futures[future]
+                try:
+                    data = future.result()
+                except Exception as e:
+                    log.warning(f"Overpass {endpoint} failed: {e}")
+                    continue
+                items = []
+                for el in data.get("elements", []):
+                    tags = el.get("tags", {})
+                    name = tags.get("name")
+                    if not name:
+                        continue
+                    items.append({
+                        "name": name[:70], "wikidata": tags.get("wikidata"),
+                        "tag_count": len(tags),
+                    })
+                if items:
+                    return items
+        except Exception as e:
+            log.warning(f"Overpass mirrors all timed out: {e}")
+    return []
+
+def shuffle_city_poi(kind: str, country_code: str, city_key: str) -> list[dict]:
+    """Тот же принцип, что и у отелей: реальный запрос к Overpass кэшируется
+    надолго только при успехе, дальше — мгновенное перемешивание в памяти."""
+    city = find_city(country_code, city_key)
+    if not city:
+        return []
+    cache_key = (kind, country_code, city_key)
+    pool = _city_poi_cache.get(cache_key)
+    if not pool:
+        pool = _fetch_osm_poi(kind, city["lat"], city["lon"])
+        if pool:
+            _city_poi_cache[cache_key] = pool
+    if not pool:
+        return []
+    chosen = random.sample(pool, min(POI_POOL_SHOW, len(pool)))
+    chosen.sort(key=lambda x: x.get("tag_count", 0), reverse=True)
+    _shown_poi_cache[cache_key] = chosen
+    return chosen
+
+def fmt_poi_header(kind: str, city: dict, country_name: str, count: int) -> str:
+    cfg = POI_KINDS[kind]
+    header = f"{cfg['icon']} <b>{cfg['label']} — {city['name']}</b> ({country_name})"
+    if count:
+        header += f"\n<i>{count} вариантов — жми «Показать другие» для новой подборки</i>"
+    else:
+        header += "\n\n😕 Не удалось получить список. Попробуй ещё раз чуть позже."
+    return header
+
+def _has_cjk(text: str) -> bool:
+    return any("一" <= ch <= "鿿" for ch in text)
+
+def _translate_page_names(page: list[dict]) -> None:
+    """OSM в некоторых регионах (например, на Хайнане) хранит названия
+    иероглифами — нечитаемо для русскоязычного пользователя. Переводим только
+    показываемую страницу (не весь пул) и только там, где реально нужно —
+    для Вьетнама/Индонезии/Египта названия и так на латинице/английском."""
+    for item in page:
+        name = item.get("name", "")
+        if name and _has_cjk(name):
+            translated = translate_to_russian(name)
+            if translated and translated != name:
+                item["name"] = translated[:70]
+
+def fmt_poi_line(i: int, item: dict, city_en: str) -> str:
+    name = html.escape(item["name"])
+    q = urllib.parse.quote(f"{item['name']} {city_en}")
+    gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
+    return f"{i}. <b>{name}</b> — <a href=\"{gmaps}\">Google Maps</a>"
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -701,7 +845,7 @@ def main_kb():
 def countries_kb():
     labels = [f"{flag} {name}" for code, (flag, name) in COUNTRIES.items()]
     rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
-    rows.append(["⬅️ Назад"])
+    rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 def cities_kb(country_code: str):
@@ -709,14 +853,17 @@ def cities_kb(country_code: str):
     labels = [f"{c['icon']} {c['name']}" for c in cities]
     rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
     rows.append(["📰 Новости страны", "🗺️ Виза"])
-    rows.append(["✈️ Рейсы из Алматы", "⬅️ Назад"])
+    rows.append(["✈️ Рейсы из Алматы"])
+    rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 def city_kb():
     return ReplyKeyboardMarkup(
         [["🏨 Отели"],
+         ["🏛 Достопримечательности", "☕ Кафе"],
          ["📰 Новости страны", "🗺️ Виза"],
-         ["✈️ Рейсы из Алматы", "⬅️ Назад"]],
+         ["✈️ Рейсы из Алматы"],
+         ["⬅️ Назад", "🏠 Главное меню"]],
         resize_keyboard=True, is_persistent=True,
     )
 
@@ -731,7 +878,7 @@ def current_kb(state: dict):
         return countries_kb()
     if screen == "cities":
         return cities_kb(state.get("country"))
-    if screen in ("city", "hotels"):
+    if screen in ("city", "hotels", "poi"):
         return city_kb()
     return main_kb()
 
@@ -740,7 +887,17 @@ def hotels_kb(offset: int, total: int):
     next_offset = offset + HOTEL_PAGE_SIZE
     if next_offset < total:
         rows.append([f"▶️ Ещё {min(HOTEL_PAGE_SIZE, total - next_offset)}"])
-    rows.append(["🔀 Показать другие 30", "⬅️ Назад"])
+    rows.append(["🔀 Показать другие 30"])
+    rows.append(["⬅️ Назад", "🏠 Главное меню"])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
+
+def poi_kb(offset: int, total: int):
+    rows = []
+    next_offset = offset + POI_PAGE_SIZE
+    if next_offset < total:
+        rows.append([f"▶️ Ещё {min(POI_PAGE_SIZE, total - next_offset)}"])
+    rows.append(["🔀 Показать другие 30"])
+    rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
 # ─── Команды ─────────────────────────────────────────────────────────────────
@@ -798,6 +955,7 @@ async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: s
             except Exception as e:
                 log.warning(f"Send city photo failed: {e}")
     page = hotels[offset:offset + HOTEL_PAGE_SIZE]
+    await asyncio.to_thread(_translate_page_names, page)
     await asyncio.to_thread(_resolve_page_photos, page)
     city_en = city.get("en", city["name"])
     header = fmt_hotels_header(city, country_name, len(hotels))
@@ -817,6 +975,38 @@ async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: s
     if text_lines:
         await ctx.bot.send_message(chat_id, "\n".join(text_lines), parse_mode="HTML", disable_web_page_preview=True)
 
+# ─── Достопримечательности/кафе: отправка страницы ────────────────────────────
+
+async def send_poi_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, kind: str, code: str, city_key: str,
+                         city: dict, items: list[dict], offset: int):
+    cfg = POI_KINDS[kind]
+    country_name = COUNTRIES.get(code, ("", ""))[1]
+    if not items:
+        await ctx.bot.send_message(chat_id, fmt_poi_header(kind, city, country_name, 0),
+                                    parse_mode="HTML", reply_markup=poi_kb(0, 0))
+        return
+    page = items[offset:offset + POI_PAGE_SIZE]
+    await asyncio.to_thread(_translate_page_names, page)
+    if cfg["photos"]:
+        await asyncio.to_thread(_resolve_page_photos, page)
+    city_en = city.get("en", city["name"])
+    header = fmt_poi_header(kind, city, country_name, len(items))
+    await ctx.bot.send_message(chat_id, header, parse_mode="HTML", reply_markup=poi_kb(offset, len(items)))
+    text_lines = []
+    for j, it in enumerate(page):
+        i = offset + j + 1
+        line = fmt_poi_line(i, it, city_en)
+        photo = it.get("photo_bytes")
+        if photo:
+            try:
+                await ctx.bot.send_photo(chat_id, photo=photo, caption=line, parse_mode="HTML")
+                continue
+            except Exception as e:
+                log.warning(f"Send poi photo failed: {e}")
+        text_lines.append(line)
+    if text_lines:
+        await ctx.bot.send_message(chat_id, "\n".join(text_lines), parse_mode="HTML", disable_web_page_preview=True)
+
 # ─── Кнопки Reply ─────────────────────────────────────────────────────────────
 
 async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -824,7 +1014,12 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     state = get_state(chat_id)
 
-    # ── Главное меню ──
+    # ── Главное меню (доступно с любого экрана — не жать "Назад" по многу раз) ──
+    if text == "🏠 Главное меню":
+        set_state(chat_id, screen="root", country=None, city=None)
+        await update.message.reply_text("Главное меню 👇", reply_markup=main_kb())
+        return
+
     if text == "📍 Страны":
         set_state(chat_id, screen="countries", country=None, city=None)
         await update.message.reply_text("🌍 Выбери страну:", reply_markup=countries_kb())
@@ -852,8 +1047,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if text == "ℹ️ О боте":
         await update.message.reply_text(
             "🌴 <b>SEA Travel News Bot</b>\n\n"
-            "Новости, погода, визы, отели и курс валют\n"
-            "по Вьетнаму, Индонезии (Бали), Сингапуру и Египту.\n\n"
+            "Новости, погода, визы, отели, достопримечательности, кафе и курс валют\n"
+            "по Вьетнаму, Индонезии (Бали), Сингапуру, Египту и Хайнаню (Китай).\n\n"
             "📅 Дайджест ежедневно в 10:00 по Алматы\n"
             "🇷🇺 Новости переводятся на русский\n🆓 Без рекламы\n\n"
             "👤 Автор: Ивашикин Николай",
@@ -937,10 +1132,52 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
         return
 
+    # ── Достопримечательности / кафе ──
+    if text == "🏛 Достопримечательности" and state.get("country") and state.get("city"):
+        code, city_key, kind = state["country"], state["city"], "attractions"
+        city = find_city(code, city_key)
+        if not _city_poi_cache.get((kind, code, city_key)):
+            await update.message.reply_text(f"⏳ Ищу достопримечательности — {city['name']}...")
+        items = await asyncio.to_thread(shuffle_city_poi, kind, code, city_key)
+        set_state(chat_id, screen="poi", poi_kind=kind, poi_offset=0)
+        await send_poi_page(ctx, chat_id, kind, code, city_key, city, items, 0)
+        return
+
+    if text == "☕ Кафе" and state.get("country") and state.get("city"):
+        code, city_key, kind = state["country"], state["city"], "cafes"
+        city = find_city(code, city_key)
+        if not _city_poi_cache.get((kind, code, city_key)):
+            await update.message.reply_text(f"⏳ Ищу кафе и рестораны — {city['name']}...")
+        items = await asyncio.to_thread(shuffle_city_poi, kind, code, city_key)
+        set_state(chat_id, screen="poi", poi_kind=kind, poi_offset=0)
+        await send_poi_page(ctx, chat_id, kind, code, city_key, city, items, 0)
+        return
+
+    if text.startswith("▶️ Ещё") and state.get("screen") == "poi":
+        kind = state.get("poi_kind")
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        items = _shown_poi_cache.get((kind, code, city_key)) or []
+        offset = state.get("poi_offset", 0) + POI_PAGE_SIZE
+        set_state(chat_id, poi_offset=offset)
+        await send_poi_page(ctx, chat_id, kind, code, city_key, city, items, offset)
+        return
+
+    if text == "🔀 Показать другие 30" and state.get("screen") == "poi":
+        kind = state.get("poi_kind")
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        if not _city_poi_cache.get((kind, code, city_key)):
+            await update.message.reply_text(f"⏳ Ищу — {city['name']}...")
+        items = await asyncio.to_thread(shuffle_city_poi, kind, code, city_key)
+        set_state(chat_id, poi_offset=0)
+        await send_poi_page(ctx, chat_id, kind, code, city_key, city, items, 0)
+        return
+
     # ── Назад ──
     if text == "⬅️ Назад":
         screen = state.get("screen", "root")
-        if screen == "hotels":
+        if screen in ("hotels", "poi"):
             code, city_key = state.get("country"), state.get("city")
             city = find_city(code, city_key)
             set_state(chat_id, screen="city")
