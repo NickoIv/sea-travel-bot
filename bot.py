@@ -10,6 +10,7 @@ import urllib.request
 import urllib.parse
 import re
 import requests
+from pypinyin import pinyin, Style
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time as dtime, timezone
 from pathlib import Path
@@ -521,7 +522,7 @@ POI_KINDS = {
     "cafes": {
         "icon": "☕", "label": "Кафе и рестораны",
         "osm_filter": '"amenity"~"^(cafe|restaurant)$"',
-        "photos": False,
+        "photos": True,
     },
 }
 POI_SEARCH_RADIUS_M = 6000
@@ -607,17 +608,26 @@ def fmt_poi_header(kind: str, city: dict, country_name: str, count: int) -> str:
 def _has_cjk(text: str) -> bool:
     return any("一" <= ch <= "鿿" for ch in text)
 
+def _cjk_to_pinyin(text: str) -> str:
+    """Транслитерация, а не перевод: китайские топонимы часто поэтичны
+    ('紫气东来' дословно — 'фиолетовый воздух приходит с востока'), обычный
+    перевод получается бессмысленным для навигации. Пиньинь — то, как эти
+    места реально подписаны на картах и указателях, по нему их и ищут."""
+    syllables = [s[0] for s in pinyin(text, style=Style.TONE, heteronym=False)]
+    return " ".join(s.capitalize() for s in syllables)
+
 def _translate_page_names(page: list[dict]) -> None:
     """OSM в некоторых регионах (например, на Хайнане) хранит названия
-    иероглифами — нечитаемо для русскоязычного пользователя. Переводим только
-    показываемую страницу (не весь пул) и только там, где реально нужно —
-    для Вьетнама/Индонезии/Египта названия и так на латинице/английском."""
+    иероглифами — нечитаемо для русскоязычного пользователя. Обрабатываем
+    только показываемую страницу (не весь пул) и только там, где реально
+    нужно — для Вьетнама/Индонезии/Египта названия и так на латинице."""
     for item in page:
         name = item.get("name", "")
         if name and _has_cjk(name):
-            translated = translate_to_russian(name)
-            if translated and translated != name:
-                item["name"] = translated[:70]
+            try:
+                item["name"] = _cjk_to_pinyin(name)[:70]
+            except Exception as e:
+                log.warning(f"Pinyin conversion failed for {name!r}: {e}")
 
 def fmt_poi_line(i: int, item: dict, city_en: str) -> str:
     name = html.escape(item["name"])
@@ -985,6 +995,13 @@ async def send_poi_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, kind: str,
         await ctx.bot.send_message(chat_id, fmt_poi_header(kind, city, country_name, 0),
                                     parse_mode="HTML", reply_markup=poi_kb(0, 0))
         return
+    if offset == 0:
+        city_photo = await asyncio.to_thread(get_city_photo, city)
+        if city_photo:
+            try:
+                await ctx.bot.send_photo(chat_id, photo=city_photo, caption=f"{city['icon']} {city['name']}, {country_name}")
+            except Exception as e:
+                log.warning(f"Send city photo failed: {e}")
     page = items[offset:offset + POI_PAGE_SIZE]
     await asyncio.to_thread(_translate_page_names, page)
     if cfg["photos"]:
