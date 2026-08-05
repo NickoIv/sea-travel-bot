@@ -206,6 +206,42 @@ FLIGHTS_INFO = (
     "🔍 Поиск билетов: aviasales.ru / skyscanner.com / google.com/flights"
 )
 
+# ─── eSIM ───────────────────────────────────────────────────────────────────
+# Бот не может сам продать eSIM и выдать QR-код — для этого нужен статус
+# партнёра-реселлера у провайдера и подключённый платёжный шлюз через
+# BotFather. Честный рабочий вариант — прямая ссылка на конкретную страну
+# в надёжном маркетплейсе (Airalo — один из самых известных и недорогих,
+# ссылки проверены вручную).
+ESIM_LINKS = {
+    "vn": "https://www.airalo.com/vietnam-esim",
+    "id": "https://www.airalo.com/indonesia-esim",
+    "sg": "https://www.airalo.com/singapore-esim",
+    "eg": "https://www.airalo.com/egypt-esim",
+    "cn": "https://www.airalo.com/china-esim",
+}
+
+def fmt_esim_info(country_code: str) -> str:
+    _, name = COUNTRIES.get(country_code, ("", "?"))
+    url = ESIM_LINKS.get(country_code)
+    if not url:
+        return "Информация недоступна"
+    extra = ""
+    if country_code == "cn":
+        extra = (
+            "⚠️ В Китае заблокированы Google, WhatsApp, большинство соцсетей и др. — "
+            "для доступа к привычным сервисам нужен VPN, eSIM с местным интернетом "
+            "эту блокировку не обходит.\n\n"
+        )
+    return (
+        f"📶 <b>eSIM — {name}</b>\n\n"
+        "Мобильный интернет без физической SIM-карты: устанавливается прямо на "
+        "телефон за пару минут, работает сразу по прилёту, не нужно искать салон связи.\n\n"
+        f"{extra}"
+        f"🔍 <a href=\"{url}\">Выбрать и купить eSIM — {name}</a>\n\n"
+        "<i>Ссылка на Airalo — один из самых известных и недорогих маркетплейсов eSIM. "
+        "Оплата и активация — на их сайте, бот туда только направляет.</i>"
+    )
+
 # ─── Перевод ──────────────────────────────────────────────────────────────────
 
 def translate_to_russian(text: str) -> str:
@@ -919,7 +955,7 @@ def cities_kb(country_code: str):
     labels = [f"{c['icon']} {c['name']}" for c in cities]
     rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
     rows.append(["📰 Новости страны", "🗺️ Виза"])
-    rows.append(["✈️ Рейсы из Алматы"])
+    rows.append(["✈️ Рейсы из Алматы", "📶 eSIM"])
     rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
@@ -928,7 +964,7 @@ def city_kb():
         [["🏨 Отели"],
          ["🏛 Достопримечательности", "☕ Кафе"],
          ["📰 Новости страны", "🗺️ Виза"],
-         ["✈️ Рейсы из Алматы"],
+         ["✈️ Рейсы из Алматы", "📶 eSIM"],
          ["⬅️ Назад", "🏠 Главное меню"]],
         resize_keyboard=True, is_persistent=True,
     )
@@ -1179,6 +1215,13 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if text == "✈️ Рейсы из Алматы":
         await update.message.reply_text(FLIGHTS_INFO, parse_mode="HTML", reply_markup=current_kb(state))
+        return
+
+    if text == "📶 eSIM" and state.get("country"):
+        await update.message.reply_text(
+            fmt_esim_info(state["country"]),
+            parse_mode="HTML", reply_markup=current_kb(state),
+        )
         return
 
     # ── Отели ──
