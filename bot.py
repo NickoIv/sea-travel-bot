@@ -516,12 +516,21 @@ def get_city_photo(city: dict) -> bytes | None:
 POI_KINDS = {
     "attractions": {
         "icon": "🏛", "label": "Достопримечательности",
-        "osm_filter": '"tourism"~"^(attraction|museum|viewpoint|gallery|zoo|theme_park|artwork)$"',
+        # Несколько отдельных клаузул вместо одного фильтра — у пляжей,
+        # парков и исторических объектов в OSM разные теги (natural/leisure/
+        # historic), не только tourism=*. Без этого объекты вроде "пляж"
+        # вообще не находились бы, хотя это самое желанное для этих городов.
+        "osm_filters": [
+            '"tourism"~"^(attraction|museum|viewpoint|gallery|zoo|theme_park|artwork)$"',
+            '"historic"',
+            '"natural"="beach"',
+            '"leisure"="park"',
+        ],
         "photos": True,
     },
     "cafes": {
         "icon": "☕", "label": "Кафе и рестораны",
-        "osm_filter": '"amenity"~"^(cafe|restaurant)$"',
+        "osm_filters": ['"amenity"~"^(cafe|restaurant)$"'],
         "photos": True,
     },
 }
@@ -532,16 +541,49 @@ POI_PAGE_SIZE = 10
 _city_poi_cache: dict[tuple, list] = {}
 _shown_poi_cache: dict[tuple, list] = {}
 
+# ── Классификация по типу — чтобы список был не "30 непонятных названий
+# подряд", а сгруппирован по смыслу (природа / культура / развлечения),
+# как в Google Maps ("Things to do") или TripAdvisor. Ключ — значение тега
+# OSM, значение — (категория для сортировки/группировки, иконка группы,
+# название группы, иконка конкретного пункта, название типа объекта).
+ATTRACTION_TYPES = {
+    "beach":        ("nature",  "🌄", "Природа и виды", "🏖", "пляж"),
+    "viewpoint":    ("nature",  "🌄", "Природа и виды", "🌄", "видовая точка"),
+    "park":         ("nature",  "🌄", "Природа и виды", "🌳", "парк"),
+    "museum":       ("culture", "🏛", "Культура и история", "🏛", "музей"),
+    "gallery":      ("culture", "🏛", "Культура и история", "🎨", "галерея"),
+    "artwork":      ("culture", "🏛", "Культура и история", "🗿", "арт-объект"),
+    "theme_park":   ("fun",     "🎢", "Развлечения", "🎢", "парк развлечений"),
+    "zoo":          ("fun",     "🎢", "Развлечения", "🦁", "зоопарк"),
+    "attraction":   ("other",   "📍", "Другое", "📍", "достопримечательность"),
+}
+CATEGORY_ORDER = {"nature": 0, "culture": 1, "fun": 2, "cafe": 0, "restaurant": 1, "other": 9}
+
+def _classify_poi(kind: str, tags: dict) -> tuple:
+    if kind == "cafes":
+        if tags.get("amenity") == "restaurant":
+            return ("restaurant", "🍽", "Рестораны", "🍽", "ресторан")
+        return ("cafe", "☕", "Кафе", "☕", "кафе")
+    if tags.get("natural") == "beach":
+        return ATTRACTION_TYPES["beach"]
+    if tags.get("leisure") == "park":
+        return ATTRACTION_TYPES["park"]
+    tourism = tags.get("tourism")
+    if tourism in ATTRACTION_TYPES:
+        return ATTRACTION_TYPES[tourism]
+    if tags.get("historic"):
+        return ("culture", "🏛", "Культура и история", "🏛", "исторический объект")
+    return ATTRACTION_TYPES["attraction"]
+
 def _fetch_osm_poi(kind: str, lat: float, lon: float) -> list[dict]:
-    osm_filter = POI_KINDS[kind]["osm_filter"]
-    query = f"""
-[out:json][timeout:20];
-(
-  node[{osm_filter}](around:{POI_SEARCH_RADIUS_M},{lat},{lon});
-  way[{osm_filter}](around:{POI_SEARCH_RADIUS_M},{lat},{lon});
-);
-out center tags;
-"""
+    filters = POI_KINDS[kind]["osm_filters"]
+    clauses = "".join(
+        f'  node[{f}](around:{POI_SEARCH_RADIUS_M},{lat},{lon});\n'
+        f'  way[{f}](around:{POI_SEARCH_RADIUS_M},{lat},{lon});\n'
+        for f in filters
+    )
+    query = f"[out:json][timeout:20];\n(\n{clauses});\nout center tags;\n"
+
     def _try(endpoint):
         resp = requests.get(
             endpoint, params={"data": query},
@@ -562,20 +604,33 @@ out center tags;
                     log.warning(f"Overpass {endpoint} failed: {e}")
                     continue
                 items = []
+                seen_ids = set()
                 for el in data.get("elements", []):
+                    el_id = (el.get("type"), el.get("id"))
+                    if el_id in seen_ids:
+                        continue
                     tags = el.get("tags", {})
                     name = tags.get("name")
                     if not name:
                         continue
+                    seen_ids.add(el_id)
+                    cat_key, group_icon, group_label, item_icon, item_label = _classify_poi(kind, tags)
                     items.append({
                         "name": name[:70], "wikidata": tags.get("wikidata"),
-                        "tag_count": len(tags),
+                        "tag_count": len(tags), "cat_key": cat_key,
+                        "group_icon": group_icon, "group_label": group_label,
+                        "item_icon": item_icon, "item_label": item_label,
                     })
                 if items:
                     return items
         except Exception as e:
             log.warning(f"Overpass mirrors all timed out: {e}")
     return []
+
+def _poi_sort_key(item: dict):
+    # Группируем по категории (природа → культура → развлечения → остальное),
+    # внутри категории — по полноте карточки в OSM, как и у отелей.
+    return (CATEGORY_ORDER.get(item.get("cat_key"), 9), -item.get("tag_count", 0))
 
 def shuffle_city_poi(kind: str, country_code: str, city_key: str) -> list[dict]:
     """Тот же принцип, что и у отелей: реальный запрос к Overpass кэшируется
@@ -592,7 +647,7 @@ def shuffle_city_poi(kind: str, country_code: str, city_key: str) -> list[dict]:
     if not pool:
         return []
     chosen = random.sample(pool, min(POI_POOL_SHOW, len(pool)))
-    chosen.sort(key=lambda x: x.get("tag_count", 0), reverse=True)
+    chosen.sort(key=_poi_sort_key)
     _shown_poi_cache[cache_key] = chosen
     return chosen
 
@@ -600,7 +655,7 @@ def fmt_poi_header(kind: str, city: dict, country_name: str, count: int) -> str:
     cfg = POI_KINDS[kind]
     header = f"{cfg['icon']} <b>{cfg['label']} — {city['name']}</b> ({country_name})"
     if count:
-        header += f"\n<i>{count} вариантов — жми «Показать другие» для новой подборки</i>"
+        header += f"\n<i>{count} вариантов, по категориям — жми «Показать другие» для новой подборки</i>"
     else:
         header += "\n\n😕 Не удалось получить список. Попробуй ещё раз чуть позже."
     return header
@@ -631,9 +686,10 @@ def _translate_page_names(page: list[dict]) -> None:
 
 def fmt_poi_line(i: int, item: dict, city_en: str) -> str:
     name = html.escape(item["name"])
+    icon = item.get("item_icon", "📍")
     q = urllib.parse.quote(f"{item['name']} {city_en}")
     gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
-    return f"{i}. <b>{name}</b> — <a href=\"{gmaps}\">Google Maps</a>"
+    return f"{i}. {icon} <b>{name}</b> — <a href=\"{gmaps}\">Google Maps</a>"
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -1010,8 +1066,14 @@ async def send_poi_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, kind: str,
     header = fmt_poi_header(kind, city, country_name, len(items))
     await ctx.bot.send_message(chat_id, header, parse_mode="HTML", reply_markup=poi_kb(offset, len(items)))
     text_lines = []
+    last_cat = None
     for j, it in enumerate(page):
         i = offset + j + 1
+        cat = it.get("cat_key")
+        if cat != last_cat:
+            last_cat = cat
+            prefix = "\n" if text_lines else ""
+            text_lines.append(f"{prefix}{it.get('group_icon','📍')} <b>{it.get('group_label','')}</b>")
         line = fmt_poi_line(i, it, city_en)
         photo = it.get("photo_bytes")
         if photo:
