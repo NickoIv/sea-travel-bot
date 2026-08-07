@@ -958,6 +958,7 @@ out center tags;
                     hotels.append({
                         "name": name[:70], "stars": tags.get("stars"),
                         "wikidata": tags.get("wikidata"), "tag_count": len(tags),
+                        "osm_type": tags.get("tourism", ""),
                     })
                 if hotels:
                     return hotels
@@ -1102,11 +1103,24 @@ def fmt_hotels_header(city: dict, country_name: str, count: int, filtered: bool 
         header += "\n\n😕 Не удалось получить список отелей. Попробуй ещё раз чуть позже."
     return header
 
+HOTEL_TYPE_LABELS = {
+    "hotel": "Отель", "guest_house": "Гостевой дом", "hostel": "Хостел",
+    "motel": "Мотель", "apartment": "Апартаменты", "resort": "Курортный отель",
+}
+
 def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
     name = html.escape(h["name"])
     stars = _stars_str(h.get("stars"))
     area = h.get("area")
     area_str = f" · 📍{html.escape(area)}" if area else ""
+    # У кураторских отелей уже есть звёзды/район в основной строке; у
+    # "довесочных" из OSM их обычно нет — тогда показываем хотя бы тип
+    # объекта, чтобы название не висело совсем без контекста.
+    type_line = ""
+    if not stars and not area:
+        type_label = HOTEL_TYPE_LABELS.get(h.get("osm_type", ""))
+        if type_label:
+            type_line = f"\n    <i>{type_label}</i>"
     q = urllib.parse.quote(f"{h['name']} {city_en}")
     # Agoda/Trip.com не открывали конкретный отель (нет бесплатного текстового
     # поиска) — Booking.com показывает отфильтрованный список по запросу,
@@ -1114,7 +1128,8 @@ def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
     # рейтинг и отзывы гостей (в отличие от звёздности из OSM).
     booking = f"https://www.booking.com/searchresults.html?ss={q}"
     gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
-    return f"{i}. <b>{name}</b>{stars}{area_str} — <a href=\"{booking}\">Booking.com</a> · <a href=\"{gmaps}\">Google Maps (отзывы)</a>"
+    return (f"{i}. <b>{name}</b>{stars}{area_str}{type_line}\n"
+            f"    <a href=\"{booking}\">Booking.com</a> · <a href=\"{gmaps}\">Google Maps (отзывы)</a>")
 
 # ─── Фото города (гарантированный визуал) ──────────────────────────────────────
 # Фото конкретного отеля есть очень редко (Дананг: 1 из 561!). Зато у самого
