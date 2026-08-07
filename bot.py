@@ -142,10 +142,11 @@ VISA_INFO = {
         "🇻🇳 <b>Вьетнам — условия въезда</b>\n\n"
         "🟢 <b>Казахстан</b>: безвизовый въезд до <b>30 дней</b>\n"
         "🟢 <b>Россия</b>: безвизовый въезд до <b>30 дней</b>\n\n"
-        "📋 <b>E-Visa</b> (30–90 дней, однократная/многократная):\n"
-        "• Сайт: evisa.xuatnhapcanh.gov.vn\n"
+        "📋 <b>E-Visa</b> (30–90 дней, однократная/многократная) — нужна, если едешь "
+        "дольше 30 дней или хочешь спокойно продлевать:\n"
+        "• <a href=\"https://evisa.xuatnhapcanh.gov.vn/\">Подать заявку и ввести данные — evisa.xuatnhapcanh.gov.vn</a>\n"
         "• Стоимость: $25 (однократная), $50 (многократная)\n"
-        "• Срок оформления: 3 рабочих дня\n\n"
+        "• Срок оформления: 3 рабочих дня, результат — файл визы (PDF) на e-mail, распечатать и взять с собой\n\n"
         "📄 Нужен паспорт действующий минимум 6 месяцев"
     ),
     "id": (
@@ -154,19 +155,22 @@ VISA_INFO = {
         "• Стоимость: $35 USD\n"
         "• Срок: 30 дней + продление ещё на 30 дней\n"
         "• Оплата: наличные USD/IDR на стойке в аэропорту\n\n"
-        "🟢 <b>E-Visa</b> (удобнее, оформить заранее):\n"
-        "• Сайт: molina.imigrasi.go.id\n"
+        "🟢 <b>E-Visa on Arrival онлайн</b> (удобнее — оформи заранее, в аэропорту "
+        "только сканируют QR):\n"
+        "• <a href=\"https://evisa.imigrasi.go.id/\">Подать заявку и ввести данные — evisa.imigrasi.go.id</a>\n"
         "• Стоимость: $35 + сбор ~$3\n"
-        "• Срок оформления: 3-5 дней\n\n"
+        "• Срок оформления: 3-5 дней, после одобрения на e-mail придёт QR-код — его сканируют на паспортном контроле\n\n"
         "📄 Нужен обратный билет и бронь отеля"
     ),
     "sg": (
         "🇸🇬 <b>Сингапур — условия въезда</b>\n\n"
         "🟢 <b>Казахстан</b>: безвизовый въезд до <b>30 дней</b>\n"
         "🟢 <b>Россия</b>: безвизовый въезд до <b>30 дней</b>\n\n"
-        "📋 С 2024 года обязательна регистрация <b>SG Arrival Card</b>:\n"
-        "• Сайт: eservices.ica.gov.sg\n"
-        "• Бесплатно, заполнить за 3 дня до прилёта\n\n"
+        "📋 С 2024 года обязательна регистрация <b>SG Arrival Card</b> — без неё не "
+        "пустят на посадку:\n"
+        "• <a href=\"https://eservices.ica.gov.sg/sgarrivalcard/\">Заполнить анкету и получить QR — eservices.ica.gov.sg/sgarrivalcard</a>\n"
+        "• Бесплатно, заполнить не раньше чем за 3 дня до прилёта\n"
+        "• После отправки анкеты на e-mail придёт подтверждение с QR-кодом — покажи его на паспортном контроле\n\n"
         "📄 Нужен обратный билет и достаточно средств (~S$100/день)"
     ),
     "eg": (
@@ -175,10 +179,10 @@ VISA_INFO = {
         "📋 <b>Visa on Arrival</b>:\n"
         "• Оплата наличными в аэропорту: $25\n"
         "• Срок: 30 дней\n\n"
-        "🟢 <b>E-Visa</b> (оформить заранее):\n"
-        "• Сайт: visa2egypt.gov.eg\n"
+        "🟢 <b>E-Visa</b> (оформить заранее, чтобы не стоять в очереди на прилёте):\n"
+        "• <a href=\"https://visa2egypt.gov.eg/\">Подать заявку и ввести данные — visa2egypt.gov.eg</a>\n"
         "• Стоимость: $25 + сервисный сбор\n"
-        "• Срок оформления: 3-7 дней\n\n"
+        "• Срок оформления: 3-7 дней, результат — файл визы на e-mail, распечатать и взять с собой\n\n"
         "📄 Нужен загранпаспорт, действующий минимум 6 месяцев"
     ),
     "cn": (
@@ -188,9 +192,12 @@ VISA_INFO = {
         "Хайнаня, не для материкового Китая\n"
         "⚠️ Список стран-участниц периодически меняется — <b>обязательно сверь себя "
         "по актуальному списку</b> перед поездкой, для Казахстана точный статус "
-        "уточняй на официальном портале\n\n"
+        "уточняй на официальном портале\n"
+        "📄 Для этого безвизового режима отдельной онлайн-регистрации/QR-кода нет — "
+        "на границе нужны только паспорт, обратный билет и бронь отеля\n\n"
         "📋 <b>Материковый Китай</b> (если планируешь выезд за пределы Хайнаня):\n"
-        "• Нужна обычная виза, оформляется в посольстве/консульстве КНР заранее\n\n"
+        "• Нужна обычная виза, оформляется в посольстве/консульстве КНР заранее — "
+        "онлайн-подачи нет, это очный визит\n\n"
         "📄 Нужен загранпаспорт, действующий минимум 6 месяцев"
     ),
 }
@@ -254,6 +261,501 @@ def fmt_esim_info(country_code: str) -> str:
         "Оплата и активация — на их сайте, бот туда только направляет.</i>"
     )
 
+# ─── Кураторские топ-подборки (отели/достопримечательности/кафе) ───────────────
+# Публичные зеркала Overpass регулярно ложатся ВСЕ одновременно (проверено:
+# 504/429/timeout на всех трёх сразу для каждого города) — на одном только
+# живом OSM-запросе список никогда не может быть надёжным. Эти подборки —
+# реальные, хорошо известные места с коротким описанием на русском (решает
+# и надёжность: показываются даже если Overpass весь лёг, и читаемость:
+# "непонятно что это" — теперь у каждого места есть причина, почему оно того
+# стоит). OSM/Overpass остаётся вторым слоем — довеском поверх кураторского
+# списка, когда сеть отвечает.
+CURATED_VN: dict = {
+    "hanoi": {
+        "attractions": [
+            {"name": "Hoan Kiem Lake", "desc": "Знаковое озеро в самом центре Ханоя с красным мостом Тхе Хук и храмом Нгок Шон на маленьком острове — лучшее место для вечерней прогулки среди местных жителей.", "cat": "culture"},
+            {"name": "Temple of Literature", "desc": "Первый университет Вьетнама, основанный в 1070 году в честь Конфуция — тихие дворики, пруды и каменные стелы с именами выпускников прошлых веков.", "cat": "culture"},
+            {"name": "Hanoi Old Quarter", "desc": "Лабиринт из 36 старинных улиц, каждая когда-то специализировалась на своём ремесле, — лучшее место для уличной еды, шопинга и атмосферы старого Ханоя.", "cat": "culture"},
+            {"name": "Ho Chi Minh Mausoleum & Ba Dinh Square", "desc": "Мавзолей Хо Ши Мина и Пагода на одном столбе на площади Бадинь — главный памятник истории современного Вьетнама, вход бесплатный по утрам.", "cat": "culture"},
+            {"name": "Hanoi Train Street", "desc": "Узкая улочка, где поезд проезжает буквально в полуметре от кафе и жилых домов, — один из самых необычных и фотогеничных уголков города.", "cat": "fun"},
+            {"name": "West Lake (Ho Tay)", "desc": "Крупнейшее озеро Ханоя с новой деревянной набережной и храмами Чан Куок и Куан Тхань поблизости — отличное место для заката и велопрогулки.", "cat": "nature"},
+            {"name": "Thang Long Water Puppet Theatre", "desc": "Традиционный вьетнамский театр водных марионеток с живым оркестром — уникальное представление с тысячелетней историей.", "cat": "fun"},
+        ],
+        "cafes": [
+            {"name": "Giang Cafe", "desc": "Легендарная кофейня, где в 1946 году изобрели яичный кофе (cà phê trứng), — обязательный к пробе десертный напиток с кремовой пенкой из желтка.", "type": "cafe"},
+            {"name": "Cong Caphe", "desc": "Культовая сеть в стиле вьетнамской пропаганды 1980-х с фирменным кокосовым кофе-смузи — узнаваемая атмосфера и отличное место для передышки между прогулками.", "type": "cafe"},
+            {"name": "Banh Mi 25", "desc": "Один из самых популярных банчиков во всём Старом квартале — хрустящий багет с паштетом, свининой и маринованными овощами за копейки.", "type": "restaurant"},
+            {"name": "Cha Ca La Vong", "desc": "Ресторан, работающий с 1871 года и давший имя целому блюду вьетнамской кухни, — жареная рыба с куркумой и укропом готовится прямо на столе.", "type": "restaurant"},
+            {"name": "Bun Cha Huong Lien", "desc": "Скромная столовая, прославившаяся визитом Барака Обамы и Энтони Бурдена, — классический бун ча на углях с холодной лапшой и травами.", "type": "restaurant"},
+            {"name": "Blue Butterfly", "desc": "Ресторан вьетнамской кухни в отреставрированном французском тюб-хаусе — сет-меню с фо бо, ча ка и бань сео в уютной атмосфере.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "Sofitel Legend Metropole Hanoi", "stars": 5, "area": "Hoan Kiem / French Quarter"},
+            {"name": "InterContinental Hanoi Westlake", "stars": 5, "area": "Tay Ho (West Lake)"},
+            {"name": "InterContinental Hanoi Landmark72", "stars": 5, "area": "Cau Giay"},
+            {"name": "Hotel de l'Opera Hanoi", "stars": 5, "area": "Hoan Kiem (near Opera House)"},
+            {"name": "Peridot Grand Luxury Boutique Hotel", "stars": 5, "area": "Old Quarter"},
+            {"name": "Hanoi La Siesta Hotel & Spa", "stars": 4, "area": "Old Quarter"},
+            {"name": "Hanoi Royal Palace Hotel 2", "stars": 4, "area": "Old Quarter"},
+            {"name": "Emerald Waters Hotel & Spa", "stars": 4, "area": "Old Quarter"},
+            {"name": "AMI Old Quarter Hotel", "stars": 3, "area": "Old Quarter"},
+            {"name": "iRest Orange Tay Ho Lakeside", "stars": 3, "area": "Tay Ho (West Lake)"},
+        ],
+    },
+    "da_nang": {
+        "attractions": [
+            {"name": "Marble Mountains (Ngu Hanh Son)", "desc": "Пять мраморных холмов с пещерами-гротами, буддийскими святилищами и смотровыми площадками у побережья — подняться можно на лифте или пешком.", "cat": "nature"},
+            {"name": "Son Tra Peninsula (Monkey Mountain)", "desc": "Лесистый полуостров-заповедник с дикими обезьянами лангурами, серпантином дорог и видами на весь залив Дананга.", "cat": "nature"},
+            {"name": "Linh Ung Pagoda", "desc": "Пагода на полуострове Шон Ча со статуей Леди Будды высотой 67 метров, самой высокой во Вьетнаме, — панорама на океан и город.", "cat": "culture"},
+            {"name": "Dragon Bridge", "desc": "Мост в форме дракона, который по выходным вечером извергает огонь и воду, — символ современного Дананга.", "cat": "fun"},
+            {"name": "Ba Na Hills & Golden Bridge", "desc": "Горный курорт с французской деревней и знаменитым Золотым мостом, который держат гигантские каменные руки, — добраться можно на одной из самых длинных канатных дорог Азии.", "cat": "fun"},
+            {"name": "My Khe Beach", "desc": "Один из красивейших пляжей Вьетнама с мягким белым песком и спокойными волнами — идеален для купания, сёрфинга и рассветных прогулок.", "cat": "nature"},
+            {"name": "Da Nang Cathedral (Pink Church)", "desc": "Розовый неоготический собор 1923 года постройки с петухом-флюгером на шпиле — популярная точка для фото в центре города.", "cat": "culture"},
+        ],
+        "cafes": [
+            {"name": "Be Ni 2", "desc": "Морской ресторан, отмеченный в гиде Michelin (Bib Gourmand), — свежайшие морепродукты, куда выстраиваются очереди и местные, и туристы.", "type": "restaurant"},
+            {"name": "4U Beach Restaurant", "desc": "Пляжный ресторан на Ми Кхе, работающий с 2002 года, — большой выбор морепродуктов прямо у кромки воды.", "type": "restaurant"},
+            {"name": "Ot Xanh", "desc": "Стильный ресторан у пляжа с открытой террасой и видом на океан — прибрежная кухня в приятной атмосфере.", "type": "restaurant"},
+            {"name": "Paradise Beach Da Nang", "desc": "Пляжный бар-кафе в стиле бамбуковых хижин прямо на песке Ми Кхе — коктейли, кофе и закат над океаном.", "type": "cafe"},
+            {"name": "Cong Caphe", "desc": "Филиал культовой вьетнамской сети в Дананге — фирменный кокосовый кофе в винтажном интерьере в стиле соцреализма.", "type": "cafe"},
+            {"name": "Madame Lan", "desc": "Просторный ресторан вьетнамской кухни на набережной реки Хан — большое меню классических блюд для знакомства с местной кухней.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "InterContinental Danang Sun Peninsula Resort", "stars": 5, "area": "Son Tra Peninsula"},
+            {"name": "Pullman Danang Beach Resort", "stars": 5, "area": "My Khe Beach"},
+            {"name": "Hyatt Regency Danang Resort & Spa", "stars": 5, "area": "Non Nuoc Beach"},
+            {"name": "Da Nang Marriott Resort & Spa", "stars": 5, "area": "Non Nuoc Beach"},
+            {"name": "Sheraton Grand Danang Resort", "stars": 5, "area": "My Khe Beach"},
+            {"name": "Vinpearl Hotel Da Nang", "stars": 4, "area": "My Khe Beach"},
+            {"name": "Muong Thanh Luxury Da Nang", "stars": 4, "area": "My Khe Beach"},
+            {"name": "A La Carte Da Nang Beach", "stars": 4, "area": "My Khe Beach"},
+            {"name": "Mandila Beach Hotel Danang", "stars": 4, "area": "My Khe Beach"},
+            {"name": "Orange Hotel Da Nang", "stars": 3, "area": "Han River / City Center"},
+        ],
+    },
+    "hoi_an": {
+        "attractions": [
+            {"name": "Hoi An Ancient Town", "desc": "Объект Всемирного наследия ЮНЕСКО — старинные торговые дома, жёлтые фасады и тысячи фонариков, особенно красиво вечером.", "cat": "culture"},
+            {"name": "Japanese Covered Bridge", "desc": "Крытый мост XVII века, построенный японской общиной, — визитная карточка Хойана, изображённая даже на банкноте в 20 000 донгов.", "cat": "culture"},
+            {"name": "Cantonese Assembly Hall", "desc": "Пышно украшенный зал, построенный китайскими торговцами-переселенцами, — драконы, резьба по дереву и благовония создают особую атмосферу.", "cat": "culture"},
+            {"name": "An Bang Beach", "desc": "Спокойный песчаный пляж в 15 минутах от Старого города — шезлонги, пляжные рестораны и закаты без толп центра.", "cat": "nature"},
+            {"name": "Thu Bon River Sunset & Lantern Boat Cruise", "desc": "Вечерняя прогулка на лодке по реке Тху Бон с запуском бумажных фонариков по воде — один из самых атмосферных вечеров в Хойане.", "cat": "fun"},
+            {"name": "Cham Islands (Cu Lao Cham)", "desc": "Архипелаг с прозрачной водой для снорклинга и дайвинга, официально признанный биосферным заповедником ЮНЕСКО.", "cat": "nature"},
+            {"name": "My Son Sanctuary", "desc": "Руины храмового комплекса цивилизации Чампа IV–XIII веков среди джунглей — вьетнамский «мини-Ангкор», объект Всемирного наследия ЮНЕСКО.", "cat": "culture"},
+        ],
+        "cafes": [
+            {"name": "Reaching Out Teahouse", "desc": "Тихая чайная в Старом городе, где обслуживают глухие мастера, — гостей просят говорить шёпотом или писать записки, атмосфера умиротворения.", "type": "cafe"},
+            {"name": "FeFe Roastery", "desc": "Кофейня с видом на пагоду Ба Му и гирляндами фонариков над каналом — популярное место для фото и качественного кофе.", "type": "cafe"},
+            {"name": "Banh Mi Phuong", "desc": "Всемирно известный банчик, который похвалил Энтони Бурден, — сочный багет с богатой начинкой и особым соусом, к которому выстраивается очередь.", "type": "restaurant"},
+            {"name": "Morning Glory Restaurant", "desc": "Ресторан знаменитого хойанского шефа Чинь Зьем Ви — классика центральновьетнамской кухни: вонтоны, белые розы, кау лау.", "type": "restaurant"},
+            {"name": "An Bang Beach Village Restaurant", "desc": "Семейный ресторан со столиками прямо на песке An Bang — жареные креветки и моллюски с лемонграссом подаются с пылу с жару.", "type": "restaurant"},
+            {"name": "Ken's", "desc": "Пляжное кафе на An Bang с одним из лучших завтраков в округе — пышные панкейки, хороший кофе и вегетарианские блюда.", "type": "cafe"},
+        ],
+        "hotels": [
+            {"name": "Four Seasons Resort The Nam Hai", "stars": 5, "area": "Ha My Beach"},
+            {"name": "Anantara Hoi An Resort", "stars": 5, "area": "Riverside, near Ancient Town"},
+            {"name": "Silk Sense Hoi An River Resort", "stars": 5, "area": "An Bang Beach (Cam An)"},
+            {"name": "The Pearl Hoi An", "stars": 5, "area": "An Bang Beach"},
+            {"name": "Almanity Hoi An Resort & Spa", "stars": 4, "area": "Near Ancient Town"},
+            {"name": "Allegro Hoi An Hotel & Spa", "stars": 4, "area": "Near Ancient Town"},
+            {"name": "La Siesta Hoi An Resort & Spa", "stars": 4, "area": "Near Ancient Town"},
+            {"name": "Vinh Hung Riverside Resort", "stars": 4, "area": "Thu Bon Riverside, near Ancient Town"},
+            {"name": "Hoian Central Hotel", "stars": 3, "area": "Near Ancient Town"},
+            {"name": "Little Gem Hoian Boutique Hotel & Spa", "stars": 3, "area": "Near Ancient Town"},
+        ],
+    },
+    "nha_trang": {
+        "attractions": [
+            {"name": "Po Nagar Cham Towers", "desc": "Храмовый комплекс цивилизации Чампа VIII–XIII веков на холме над рекой Кай — древнейшая архитектура региона и всё ещё действующее святилище.", "cat": "culture"},
+            {"name": "Long Son Pagoda", "desc": "Буддийский храм XIX века с гигантской 24-метровой статуей сидящего Будды на вершине холма — панорама на весь город.", "cat": "culture"},
+            {"name": "VinWonders Nha Trang (Hon Tre Island)", "desc": "Парк развлечений на острове Хон Че с аквапарком, аттракционами и океанариумом — добраться можно по одной из самых длинных морских канатных дорог мира.", "cat": "fun"},
+            {"name": "Hon Mun Island", "desc": "Лучшее место для снорклинга в заливе Нячанг благодаря коралловым рифам и прозрачной воде морского заповедника.", "cat": "nature"},
+            {"name": "Tran Phu Beach", "desc": "Главный городской пляж протяжённостью около 6 км с чистой водой и пальмовой набережной прямо в центре Нячанга.", "cat": "nature"},
+            {"name": "Hon Chong Promontory", "desc": "Скальный мыс, вдающийся в океан, со знаменитым «отпечатком ладони великана» в камне — виды на бухту и остров Хон Ноай.", "cat": "nature"},
+            {"name": "Nha Trang Cathedral", "desc": "Готический католический собор 1930-х годов на холме, построенный из каменных блоков, — один из символов города.", "cat": "culture"},
+        ],
+        "cafes": [
+            {"name": "Cookbook Cafe", "desc": "Кафе с элегантным интерьером и видом на океан при отеле InterContinental — большой выбор блюд, десертов и выпечки по разумным ценам.", "type": "cafe"},
+            {"name": "Louisiane Brewhouse", "desc": "Пляжная пивоварня с собственным крафтовым пивом, свежими морепродуктами и живой музыкой по выходным — работает прямо на берегу Тран Фу.", "type": "restaurant"},
+            {"name": "Sailing Club Nha Trang", "desc": "Самый известный пляжный клуб города — коктейли, диджеи и вечеринки прямо на песке уже не одно десятилетие.", "type": "restaurant"},
+            {"name": "La Fenêtre Soleil", "desc": "Кафе во французской колониальной вилле с тропическим садом — атмосфера старого Индокитая, хорошо для завтрака и кофе.", "type": "cafe"},
+            {"name": "Dining by the Rocks", "desc": "Ресторан курорта Six Senses в бухте Нинь Ван, встроенный прямо в скалы, — эффектное место для особого ужина с видом на океан.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "Six Senses Ninh Van Bay", "stars": 5, "area": "Ninh Van Bay"},
+            {"name": "InterContinental Nha Trang", "stars": 5, "area": "Tran Phu Beach"},
+            {"name": "Sheraton Nha Trang Hotel & Spa", "stars": 5, "area": "Tran Phu Beach"},
+            {"name": "Vinpearl Resort Nha Trang", "stars": 5, "area": "Hon Tre Island"},
+            {"name": "Mia Resort Nha Trang", "stars": 5, "area": "Bai Dong (south of city)"},
+            {"name": "Novotel Nha Trang", "stars": 4, "area": "Tran Phu Beach"},
+            {"name": "Citadines Bayfront Nha Trang", "stars": 4, "area": "Tran Phu Beach"},
+            {"name": "Nha Trang Lodge Hotel", "stars": 3, "area": "Tran Phu Beach"},
+            {"name": "Queen Ann Nha Trang Hotel", "stars": 3, "area": "Nha Trang City Center"},
+        ],
+    },
+    "phu_quoc": {
+        "attractions": [
+            {"name": "Sao Beach (Bai Sao)", "desc": "Один из самых красивых пляжей острова с белоснежным песком и бирюзовой водой на юго-восточном побережье — идеален для купания.", "cat": "nature"},
+            {"name": "Vinpearl Safari Phu Quoc", "desc": "Крупнейший полудикий сафари-парк Вьетнама — жирафы, львы и сотни видов животных в просторных открытых вольерах.", "cat": "fun"},
+            {"name": "Hon Thom Cable Car & Sun World", "desc": "Самая длинная в мире трёхтросовая канатная дорога над морем ведёт на остров Хон Тхом с аквапарком и аттракционами.", "cat": "fun"},
+            {"name": "Phu Quoc Prison Museum", "desc": "Мемориальный музей на месте бывшей тюрьмы времён войны — реконструированные камеры и экспозиция о судьбах узников.", "cat": "culture"},
+            {"name": "Dinh Cau Rock & Temple", "desc": "Небольшой храм на скале у входа в гавань Зыонг Донг, посвящённый богине моря, — популярное место для встречи заката.", "cat": "culture"},
+            {"name": "Ham Ninh Fishing Village", "desc": "Рыбацкая деревня на восточном побережье с деревянным пирсом и рынком морепродуктов — колоритный взгляд на повседневную жизнь острова.", "cat": "culture"},
+            {"name": "Suoi Tranh Waterfall", "desc": "Водопад в национальном парке Фукуок среди тропического леса — приятное место для купания и прогулки в жаркий день.", "cat": "nature"},
+        ],
+        "cafes": [
+            {"name": "Chuon Chuon Bistro & Skybar", "desc": "Модное кафе-бар с панорамными окнами и стильным деревянным интерьером — популярное место для фото и коктейлей на закате.", "type": "cafe"},
+            {"name": "Aroi Dessert Cafe", "desc": "Кафе с видом на океан, специализирующееся на десертах, — отличное место встретить закат с чем-то сладким.", "type": "cafe"},
+            {"name": "Buddy Ice Cream & Cafe", "desc": "Уютное кафе у марины с домашним мороженым и необычными тостами — атмосфера, созданная австралийским хозяином.", "type": "cafe"},
+            {"name": "Hana Coffee & Restaurant", "desc": "Кафе на канале в Grand World Phu Quoc, где можно наблюдать за гондолами за чашкой кокосового кофе.", "type": "cafe"},
+            {"name": "Sunset Sanato Beach Club", "desc": "Пляжный клуб-ресторан на западном побережье, знаменитый закатами над Сиамским заливом, — шезлонги, бассейн и разнообразная кухня.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "InterContinental Phu Quoc Long Beach Resort", "stars": 5, "area": "Long Beach (Bai Truong)"},
+            {"name": "La Veranda Resort Phu Quoc MGallery", "stars": 5, "area": "Long Beach (Bai Truong)"},
+            {"name": "JW Marriott Phu Quoc Emerald Bay Resort & Spa", "stars": 5, "area": "Khem Beach (Bai Khem)"},
+            {"name": "Vinpearl Resort & Spa Phu Quoc", "stars": 5, "area": "Bai Dai Beach"},
+            {"name": "Fusion Resort Phu Quoc", "stars": 5, "area": "Cua Lap / Ong Lang area"},
+            {"name": "Mercure Phu Quoc Resort & Villas", "stars": 4, "area": "Ong Lang Beach"},
+            {"name": "Novotel Phu Quoc Resort", "stars": 4, "area": "Duong Dong / Long Beach"},
+            {"name": "Tahiti Central Seaview", "stars": 3, "area": "Long Beach (near Night Market)"},
+            {"name": "Hung Vuong Resort", "stars": 3, "area": "Duong Dong Beach"},
+            {"name": "An Phu Hotel", "stars": 3, "area": "Long Beach area"},
+        ],
+    },
+}
+CURATED_ID_SG: dict = {
+    "denpasar": {
+        "attractions": [
+            {"name": "Tanah Lot Temple", "desc": "Знаменитый храм на скале посреди океана — символ Бали и одно из самых фотографируемых мест острова, особенно красив на закате.", "cat": "culture"},
+            {"name": "Uluwatu Temple", "desc": "Храм на отвесной скале над океаном на юге полуострова Букит, вечером здесь проходит зрелищный танец Кечак на фоне заката.", "cat": "culture"},
+            {"name": "Garuda Wisnu Kencana (GWK) Cultural Park", "desc": "Культурный парк с одной из самых высоких статуй в мире — Вишну верхом на орле Гаруде, плюс шоу и панорамные виды.", "cat": "culture"},
+            {"name": "Waterbom Bali", "desc": "Один из лучших аквапарков Азии в Куте — экстремальные горки и семейные зоны отдыха на весь день.", "cat": "fun"},
+            {"name": "Seminyak Beach", "desc": "Стильный пляж с белым песком, окружённый барами и ресторанами — идеален для заката с коктейлем в руках.", "cat": "nature"},
+            {"name": "Kuta Beach", "desc": "Самый известный пляж Бали для сёрфинга и заката, с длинной набережной, магазинами и ночной жизнью рядом.", "cat": "nature"},
+            {"name": "Water Blow, Nusa Dua", "desc": "Природный гейзер на скалистом берегу Nusa Dua, где волны с силой бьют в расщелину, поднимая фонтаны брызг.", "cat": "nature"},
+            {"name": "Jimbaran Beach", "desc": "Тихий пляж с рыбацкими лодками, знаменит ужинами со свежими морепродуктами прямо на песке под открытым небом.", "cat": "nature"},
+        ],
+        "cafes": [
+            {"name": "Revolver Espresso", "desc": "Культовая кофейня Семиньяка в узком переулке — одна из первых, кто привёз в Бали культуру спешелти-кофе.", "type": "cafe"},
+            {"name": "Kynd", "desc": "Popular вегетарианско-веганское кафе с ярким интерьером и полезным меню — любимое место фрилансеров и любителей здоровой еды.", "type": "cafe"},
+            {"name": "Motel Mexicola", "desc": "Яркий тропический ресторан-бар в стиле мексиканской вечеринки — коктейли, тако и атмосфера настоящего праздника.", "type": "restaurant"},
+            {"name": "Menega Cafe", "desc": "Один из самых известных ресторанов на пляже Джимбаран — свежие морепродукты на гриле прямо у кромки воды на закате.", "type": "restaurant"},
+            {"name": "BATIK", "desc": "Элегантный ресторан вьетнамской, тайской и индонезийской кухни с эффектным интерьером и авторскими коктейлями.", "type": "restaurant"},
+            {"name": "SIKI", "desc": "Уютный ресторан японской фьюжн-кухни в районе Nusa Dua с отличным сервисом и качественной подачей.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "W Bali - Seminyak", "stars": 5, "area": "Seminyak Beach"},
+            {"name": "The Oberoi Beach Resort Bali", "stars": 5, "area": "Seminyak Beach"},
+            {"name": "Four Seasons Resort Bali at Jimbaran Bay", "stars": 5, "area": "Jimbaran Bay"},
+            {"name": "The St. Regis Bali Resort", "stars": 5, "area": "Nusa Dua"},
+            {"name": "The Apurva Kempinski Bali", "stars": 5, "area": "Nusa Dua"},
+            {"name": "Conrad Bali", "stars": 5, "area": "Tanjung Benoa, Nusa Dua"},
+            {"name": "Hard Rock Hotel Bali", "stars": 4, "area": "Kuta Beach"},
+            {"name": "Ibis Styles Bali Benoa", "stars": 3, "area": "Tanjung Benoa, Nusa Dua"},
+            {"name": "Grandmas Plus Hotel Seminyak", "stars": 3, "area": "Seminyak"},
+            {"name": "Favehotel Seminyak", "stars": 2, "area": "Seminyak"},
+        ],
+    },
+    "ubud": {
+        "attractions": [
+            {"name": "Tegalalang Rice Terrace", "desc": "Знаменитые ступенчатые рисовые террасы в живописной долине — символ балийского пейзажа и must-visit фотолокация.", "cat": "nature"},
+            {"name": "Sacred Monkey Forest Sanctuary", "desc": "Лесной заповедник с храмами и сотнями балийских макак, свободно живущих среди древних деревьев в центре Убуда.", "cat": "nature"},
+            {"name": "Campuhan Ridge Walk", "desc": "Живописная тропа по гребню холма среди зелёных полей — популярное место для утренней прогулки с панорамными видами.", "cat": "nature"},
+            {"name": "Tirta Empul Temple", "desc": "Священный храм со святым источником, где балийцы и туристы совершают ритуальное очищение в бассейнах с проточной водой.", "cat": "culture"},
+            {"name": "Goa Gajah (Elephant Cave)", "desc": "Древний пещерный храм XI века с резным входом в виде демонической маски — важный памятник индуистско-буддийской истории Бали.", "cat": "culture"},
+            {"name": "Ubud Palace (Puri Saren Agung)", "desc": "Исторический королевский дворец в центре города с изящной балийской архитектурой и вечерними танцевальными представлениями.", "cat": "culture"},
+            {"name": "Ubud Art Market", "desc": "Оживлённый рынок ремёсел в центре Убуда — сувениры, текстиль и изделия местных мастеров, лучшее место для шопинга и торга.", "cat": "fun"},
+            {"name": "Bali Swing", "desc": "Гигантские качели над джунглями и рисовыми полями — одна из самых популярных Instagram-локаций Бали.", "cat": "fun"},
+        ],
+        "cafes": [
+            {"name": "Locavore", "desc": "Отмеченный мировыми рейтингами ресторан high-end кухни на локальных продуктах — гастрономическая жемчужина Убуда.", "type": "restaurant"},
+            {"name": "Naughty Nuri's Warung", "desc": "Легендарное место с рёбрышками на гриле и крепкими мартини — простая обстановка и культовая репутация среди туристов и экспатов.", "type": "restaurant"},
+            {"name": "Bebek Bengil (Dirty Duck Diner)", "desc": "Один из самых известных ресторанов Убуда, прославившийся хрустящей жареной уткой в окружении рисовых полей.", "type": "restaurant"},
+            {"name": "Clear Cafe", "desc": "Просторное кафе с деревянным интерьером и меню здоровой вегетарианской и веганской кухни — популярно у йогов и цифровых кочевников.", "type": "cafe"},
+            {"name": "Rüsters", "desc": "Кафе с собственной обжаркой кофе и пекарней — свежая выпечка и качественный кофе в приятной атмосфере.", "type": "cafe"},
+            {"name": "Alchemy", "desc": "Крупное веганское кафе с обширным меню, смузи-баром и удобным пространством для работы и отдыха.", "type": "cafe"},
+        ],
+        "hotels": [
+            {"name": "Four Seasons Resort Bali at Sayan", "stars": 5, "area": "Sayan, Ubud"},
+            {"name": "Mandapa, a Ritz-Carlton Reserve", "stars": 5, "area": "Sayan, Ubud"},
+            {"name": "COMO Shambhala Estate", "stars": 5, "area": "Begawan, Ubud"},
+            {"name": "Komaneka at Bisma", "stars": 5, "area": "Bisma, Ubud"},
+            {"name": "Bisma Eight", "stars": 4, "area": "Bisma, Ubud"},
+            {"name": "Artotel Haniman Ubud", "stars": 4, "area": "Central Ubud"},
+            {"name": "Alaya Resort Ubud", "stars": 4, "area": "Central Ubud"},
+            {"name": "Ubud Village Hotel", "stars": 3, "area": "Central Ubud"},
+            {"name": "Tegal Sari", "stars": 2, "area": "Campuhan, Ubud"},
+            {"name": "Bisma Cottages", "stars": 2, "area": "Bisma, Ubud"},
+        ],
+    },
+    "lombok": {
+        "attractions": [
+            {"name": "Mount Rinjani", "desc": "Второй по высоте вулкан Индонезии с кратерным озером — популярный многодневный треккинг с видами на рассвете.", "cat": "nature"},
+            {"name": "Sendang Gile & Tiu Kelep Waterfall", "desc": "Пара впечатляющих водопадов у подножия Ринджани — можно искупаться в прохладной воде среди джунглей.", "cat": "nature"},
+            {"name": "Gili Trawangan", "desc": "Самый крупный и оживлённый из островов Гили — дайвинг, снорклинг и лучшая вечерняя жизнь на побережье без машин и мотоциклов.", "cat": "fun"},
+            {"name": "Gili Air", "desc": "Более спокойный и уютный остров Гили с бирюзовой водой — идеален для отдыха, снорклинга с черепахами и медленного темпа жизни.", "cat": "nature"},
+            {"name": "Pink Beach (Pantai Tangsi)", "desc": "Уединённый пляж с розоватым песком и кристально чистой водой на юго-востоке Ломбока — must-see для любителей нетронутой природы.", "cat": "nature"},
+            {"name": "Kuta Beach Lombok (Mandalika)", "desc": "Живописный пляж с белым песком и холмами вокруг, центр района Мандалика — сёрфинг и спокойный отдых вдали от толп.", "cat": "nature"},
+            {"name": "Sade Traditional Sasak Village", "desc": "Традиционная деревня коренного народа сасак с домами из бамбука и соломы — живая культура и ремёсла Ломбока.", "cat": "culture"},
+            {"name": "Mayura Water Palace", "desc": "Исторический королевский водный дворец в Матараме с прудом и павильоном — памятник балийско-ломбокской истории XVIII века.", "cat": "culture"},
+        ],
+        "cafes": [
+            {"name": "Ashtari", "desc": "Культовый ресторан на вершине холма над бухтой Кута с потрясающим видом на океан — атмосфера, ради которой сюда едут туристы.", "type": "restaurant"},
+            {"name": "Milk", "desc": "Популярное место для завтрака и обеда в Куте-Ломбок — свежие боулы, кофе и приятная непринуждённая атмосфера.", "type": "cafe"},
+            {"name": "Kenza Cafe & Restaurant", "desc": "Одно из самых любимых мест в Сенгиги — разнообразное меню и приветливая атмосфера у моря.", "type": "cafe"},
+            {"name": "Basilico Restaurant", "desc": "Итальянский ресторан при отеле Senggigi Beach с пиццей на дровах и видом на закат над проливом.", "type": "restaurant"},
+            {"name": "El Bazar Cafe & Restaurant", "desc": "Уютное кафе в Сенгиги с международным меню — удобное место для отдыха между пляжными вылазками.", "type": "cafe"},
+            {"name": "Cafe Alberto", "desc": "Давно работающий пляжный ресторан в Сенгиги с итальянской кухней и живой музыкой на закате.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "Hotel Tugu Lombok", "stars": 5, "area": "Sire Beach"},
+            {"name": "Pullman Lombok Merujani Mandalika Beach Resort", "stars": 5, "area": "Kuta Mandalika"},
+            {"name": "Qunci Villas Resort", "stars": 4, "area": "Senggigi Beach"},
+            {"name": "Puri Mas Boutique Resort & Spa", "stars": 4, "area": "Mangsit, Senggigi"},
+            {"name": "Katamaran Hotel & Resort Lombok", "stars": 4, "area": "Mangsit, Senggigi"},
+            {"name": "Sheraton Senggigi Beach Resort", "stars": 4, "area": "Senggigi Beach"},
+            {"name": "Novotel Lombok Resort & Villas", "stars": 4, "area": "Kuta Mandalika"},
+            {"name": "Holiday Resort Lombok", "stars": 3, "area": "Senggigi Beach"},
+            {"name": "Swiss-Belcourt Lombok", "stars": 3, "area": "Mataram"},
+            {"name": "Golden Palace Hotel Lombok", "stars": 3, "area": "Mataram"},
+        ],
+    },
+    "singapore": {
+        "attractions": [
+            {"name": "Gardens by the Bay", "desc": "Футуристический парк с гигантскими Супердеревьями, оранжереями Cloud Forest и Flower Dome — визитная карточка современного Сингапура.", "cat": "nature"},
+            {"name": "Marina Bay Sands SkyPark Observation Deck", "desc": "Смотровая площадка на крыше знаменитого отеля-курорта с панорамным видом на весь город и залив.", "cat": "fun"},
+            {"name": "Merlion Park", "desc": "Место с культовой статуей Мерлиона — получеловека-полульва, символа Сингапура, с видом на небоскрёбы залива.", "cat": "culture"},
+            {"name": "Universal Studios Singapore", "desc": "Тематический парк на острове Сентоза с аттракционами по мотивам голливудских фильмов — must-visit для семей и любителей адреналина.", "cat": "fun"},
+            {"name": "Night Safari", "desc": "Первый в мире ночной зоопарк, где можно наблюдать за дикими животными в их естественном ночном ритме на трамвае или пешком.", "cat": "nature"},
+            {"name": "Chinatown Singapore", "desc": "Исторический квартал с яркими лавками, храмами вроде Buddha Tooth Relic Temple и знаменитыми фуд-кортами.", "cat": "culture"},
+            {"name": "Little India", "desc": "Колоритный квартал с индуистскими храмами, специями и уличной едой — атмосфера настоящей Индии в центре Сингапура.", "cat": "culture"},
+            {"name": "Sentosa Island (Siloso Beach)", "desc": "Островной курорт с пляжами, аттракционами и парками развлечений — популярное место для отдыха на весь день.", "cat": "fun"},
+        ],
+        "cafes": [
+            {"name": "Tian Tian Hainanese Chicken Rice", "desc": "Легендарный ларёк на фуд-корте Maxwell — одно из самых известных блюд Сингапура, курица с рисом, побеждавшая даже Гордона Рамзи.", "type": "restaurant"},
+            {"name": "Lau Pa Sat", "desc": "Исторический крытый фуд-маркет в самом центре делового района — десятки лотков с местной кухней и вечерняя улица сатай.", "type": "restaurant"},
+            {"name": "Jumbo Seafood", "desc": "Знаменитая сеть ресторанов, прославившаяся фирменным чили-крабом — must-try блюдо для любого гостя Сингапура.", "type": "restaurant"},
+            {"name": "Ya Kun Kaya Toast", "desc": "Культовая сеть кафе с 1944 года — традиционный сингапурский завтрак: тосты с кая, яйца всмятку и крепкий кофе.", "type": "cafe"},
+            {"name": "PS.Cafe", "desc": "Стильное кафе в зелёном окружении (например, на Dempsey Hill) — популярное место для бранча и фото в инстаграм.", "type": "cafe"},
+            {"name": "Odette", "desc": "Ресторан французской кухни с тремя звёздами Мишлен — вершина высокой гастрономии Сингапура для особого случая.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "Marina Bay Sands", "stars": 5, "area": "Marina Bay"},
+            {"name": "Raffles Hotel Singapore", "stars": 5, "area": "City Hall / Beach Road"},
+            {"name": "The Fullerton Hotel Singapore", "stars": 5, "area": "Marina Bay"},
+            {"name": "Mandarin Oriental Singapore", "stars": 5, "area": "Marina Bay"},
+            {"name": "Conrad Singapore Marina Bay", "stars": 5, "area": "Marina Bay"},
+            {"name": "Village Hotel Bugis", "stars": 4, "area": "Bugis"},
+            {"name": "Hotel Clover 769", "stars": 3, "area": "Kampong Glam"},
+            {"name": "Lyf Bugis Singapore", "stars": 3, "area": "Bugis"},
+            {"name": "ibis Singapore on Bencoolen", "stars": 3, "area": "Bugis / Bencoolen"},
+            {"name": "Hotel 81 Bugis", "stars": 2, "area": "Bugis"},
+        ],
+    },
+}
+CURATED_EG_CN: dict = {
+    "cairo": {
+        "attractions": [
+            {"name": "Pyramids of Giza & Great Sphinx", "desc": "Последнее из семи чудес древнего мира: три гигантские пирамиды и высеченный из скалы Сфинкс — ради этого стоит лететь в Египет; лучше приезжать рано утром или к закату, пока меньше туристов и жары.", "cat": "culture"},
+            {"name": "Grand Egyptian Museum (GEM)", "desc": "Крупнейший в мире археологический музей, открытый у подножия пирамид в конце 2025 года: полная коллекция сокровищ Тутанхамона и более 13000 других экспонатов, включая гигантскую статую Рамсеса II.", "cat": "culture"},
+            {"name": "Egyptian Museum, Tahrir Square", "desc": "Старый, но всё ещё впечатляющий музей в центре Каира с залом царских мумий и огромной коллекцией древнеегипетских артефактов.", "cat": "culture"},
+            {"name": "Khan el-Khalili Bazaar", "desc": "Огромный восточный базар XIV века с лабиринтом лавок, ювелиров и специй — идеальное место для сувениров, чашки кофе и атмосферы настоящего каирского Востока.", "cat": "fun"},
+            {"name": "Citadel of Saladin (Mosque of Muhammad Ali)", "desc": "Средневековая крепость на холме с грандиозной мечетью Мухаммеда Али в османском стиле и панорамным видом на весь Каир.", "cat": "culture"},
+            {"name": "Al-Azhar Mosque", "desc": "Одна из старейших действующих мечетей мира (970 год) и центр исламского богословия — впечатляющая архитектура в двух шагах от Хан эль-Халили.", "cat": "culture"},
+            {"name": "Nile Felucca Ride", "desc": "Прогулка на традиционной парусной лодке фелюке по Нилу на закате — спокойный способ увидеть город с воды, особенно хорош у острова Замалек.", "cat": "nature"},
+            {"name": "Coptic Cairo (Hanging Church)", "desc": "Старейший христианский квартал Каира с Подвешенной церковью IV века, синагогой Бен-Эзра и узкими улочками, помнящими первые века христианства в Египте.", "cat": "culture"},
+        ],
+        "cafes": [
+            {"name": "El-Fishawy", "desc": "Старейшая кофейня Каира, работающая с 1797 года, в самом сердце Хан эль-Халили — мята, каркаде и шум базара; через неё прошли поколения египетских писателей и художников.", "type": "cafe"},
+            {"name": "Café Riche", "desc": "Легендарное кафе в центре города (с 1908 года), место встреч революционеров, писателей и артистов — живая история Каира в чашке кофе.", "type": "cafe"},
+            {"name": "Khan El Khalili Restaurant & Naguib Mahfouz Coffee Shop", "desc": "Уютный ресторан в самом базаре, названный в честь нобелевского лауреата Нагиба Махфуза — классическая египетская кухня и восточный интерьер с 1989 года.", "type": "restaurant"},
+            {"name": "Abou El Sid", "desc": "Один из самых известных ресторанов традиционной египетской кухни в Каире — консоме, кушари и молохея в атмосфере старого дома.", "type": "restaurant"},
+            {"name": "Sequoia", "desc": "Стильный ресторан на берегу Нила на острове Замалек с террасой прямо над водой — средиземноморская и восточная кухня и один из лучших видов на реку вечером.", "type": "restaurant"},
+            {"name": "Zooba", "desc": "Современная сеть уличной египетской еды — фалафель, кушари и хавауши в ярком демократичном формате, отличный вариант на обед без похода в дорогой ресторан.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "Marriott Mena House, Cairo", "stars": 5, "area": "Giza / вид на пирамиды"},
+            {"name": "Four Seasons Hotel Cairo at Nile Plaza", "stars": 5, "area": "Garden City / набережная Нила"},
+            {"name": "The Nile Ritz-Carlton, Cairo", "stars": 5, "area": "Downtown / набережная Нила"},
+            {"name": "Kempinski Nile Hotel Cairo", "stars": 5, "area": "Garden City / набережная Нила"},
+            {"name": "Sofitel Cairo Nile El Gezirah", "stars": 5, "area": "Zamalek"},
+            {"name": "Steigenberger Pyramids Cairo", "stars": 5, "area": "Giza / Pyramids Road"},
+            {"name": "Le Meridien Pyramids Hotel & Spa", "stars": 4, "area": "Giza / Pyramids Road"},
+            {"name": "Cairo Marriott Hotel & Omar Khayyam Casino", "stars": 5, "area": "Zamalek"},
+            {"name": "Pension Roma", "stars": 2, "area": "Downtown Cairo"},
+        ],
+    },
+    "hurghada": {
+        "attractions": [
+            {"name": "Giftun Island", "desc": "Охраняемый морской парк с белоснежным пляжем и кристально чистой водой в получасе на лодке от берега — лучшее место у Хургады для снорклинга среди кораллов.", "cat": "nature"},
+            {"name": "Sindbad Submarine", "desc": "Настоящая подводная лодка (одна из немногих в Африке), которая опускается на 22 метра и показывает коралловый риф и рыб через иллюминаторы — не нужно уметь плавать или нырять.", "cat": "fun"},
+            {"name": "El Dahar (Old Town)", "desc": "Старый город Хургады с восточным рынком, узкими улочками, мечетями и недорогими кафе — контраст курортным отелям и глоток настоящего Египта.", "cat": "culture"},
+            {"name": "Hurghada Marina Boulevard", "desc": "Набережная с яхтами, пальмами, ресторанами и магазинами — приятное место для вечерней прогулки и ужина у моря.", "cat": "fun"},
+            {"name": "Makadi Water World", "desc": "Крупнейший аквапарк Египта с полусотней горок для всей семьи — отличный вариант на день без моря и солнца.", "cat": "fun"},
+            {"name": "Dolphin House (Sha'ab El Erg)", "desc": "Знаменитый коралловый риф в форме подковы, где почти гарантированно можно встретить диких дельфинов афалин во время снорклинг-тура.", "cat": "nature"},
+            {"name": "Desert Safari & Bedouin Dinner", "desc": "Поездка на джипах или квадроциклах в Восточную пустыню с посещением бедуинской деревни и ужином под звёздами — Хургада не только про море.", "cat": "fun"},
+            {"name": "El Mina Mosque (Hurghada Grand Mosque)", "desc": "Самая большая и заметная мечеть Хургады с двумя высокими минаретами на набережной Сакалла — красиво выглядит и днём, и в вечерней подсветке.", "cat": "culture"},
+        ],
+        "cafes": [
+            {"name": "Granada Restaurant & Pub", "desc": "Один из самых популярных ресторанов Хургады у местных и туристов — свежие морепродукты и большое интернациональное меню.", "type": "restaurant"},
+            {"name": "Nubian Egyptian Restaurant & Café", "desc": "Уютное место для знакомства с настоящей египетской кухней — фалафель, кофта и кошари в дружелюбной атмосфере.", "type": "restaurant"},
+            {"name": "Moby Dick Restaurant", "desc": "Давно и хорошо известный в Хургаде рыбный ресторан со свежим уловом и классической подачей морепродуктов.", "type": "restaurant"},
+            {"name": "Boska Restaurant & Café", "desc": "Простое и уютное кафе-ресторан с современным интерьером, вкусной домашней едой и разумными ценами.", "type": "cafe"},
+            {"name": "Vibes Restaurant & Cafe", "desc": "Кафе с видом на Красное море — удобно совместить хороший кофе или ужин с закатом над водой.", "type": "cafe"},
+        ],
+        "hotels": [
+            {"name": "The Oberoi Beach Resort, Sahl Hasheesh", "stars": 5, "area": "Sahl Hasheesh"},
+            {"name": "Premier Le Reve Hotel & Spa", "stars": 5, "area": "Sahl Hasheesh"},
+            {"name": "Steigenberger Aldau Beach Hotel", "stars": 5, "area": "Sahl Hasheesh / Madinat Makadi"},
+            {"name": "Sunrise Royal Makadi Resort", "stars": 5, "area": "Makadi Bay"},
+            {"name": "Pickalbatros Citadel Resort Sahl Hasheesh", "stars": 5, "area": "Sahl Hasheesh"},
+            {"name": "JAZ Aquamarine Resort", "stars": 5, "area": "El Kawther / Hurghada"},
+            {"name": "Three Corners Fayrouz Plaza Beach Resort", "stars": 4, "area": "Sekalla"},
+            {"name": "Arabia Azur Resort", "stars": 3, "area": "El Dahar"},
+            {"name": "Sand Beach Resort", "stars": 3, "area": "El Dahar"},
+        ],
+    },
+    "sharm": {
+        "attractions": [
+            {"name": "Ras Mohammed National Park", "desc": "Один из красивейших дайв- и снорклинг-сайтов Красного моря на кончике Синайского полуострова — коралловые стены, обрывающиеся в бирюзовую бездну, и невероятное разнообразие рыб.", "cat": "nature"},
+            {"name": "Naama Bay", "desc": "Главная набережная и сердце Шарм-эль-Шейха — рестораны, бары, магазины и пляжные кафе прямо у воды, живёт допоздна.", "cat": "fun"},
+            {"name": "Tiran Island", "desc": "Остров у входа в Акабский залив с одними из лучших рифов региона — популярное направление для дневных лодочных туров на снорклинг и дайвинг.", "cat": "nature"},
+            {"name": "Ras Um Sid & Lighthouse", "desc": "Скалистый мыс с маяком на южной оконечности города — потрясающий вид на пролив Тиран и один из лучших рифов прямо у берега для снорклинга.", "cat": "nature"},
+            {"name": "SOHO Square", "desc": "Развлекательный комплекс с танцующими фонтанами, катком, ресторанами и барами — самое яркое вечернее место Шарма для семей и компаний.", "cat": "fun"},
+            {"name": "Old Market (Sharm El Maya)", "desc": "Настоящий восточный рынок со специями, сувенирами и уличной едой — то немногое место в Шарме, где чувствуется живой Египет, а не только курорт.", "cat": "culture"},
+            {"name": "Shark's Bay", "desc": "Тихая укромная бухта с прозрачной водой и рифом прямо от берега — отличное место для спокойного снорклинга без толп.", "cat": "nature"},
+            {"name": "Colored Canyon Desert Safari", "desc": "Джип-сафари в пустыню Синая к разноцветному каньону из песчаника — контраст морскому отдыху и один из самых фотогеничных пейзажей региона.", "cat": "fun"},
+        ],
+        "cafes": [
+            {"name": "El Kahwa", "desc": "Уютная кофейня на Soho Square с открытой террасой, мозаикой и коваными деталями — турецкий кофе, египетский чай и кальян в приятной атмосфере.", "type": "cafe"},
+            {"name": "Kouroum of the Nile", "desc": "Винный ресторан на Soho Square с богатой картой египетских и импортных вин — атмосфера для спокойного вечера с бокалом вина.", "type": "restaurant"},
+            {"name": "Sushi Lounge", "desc": "Современный японский ресторан на Soho Square — суши, сашими и коктейли в стильном интерьере.", "type": "restaurant"},
+            {"name": "Cafe Chino", "desc": "Популярное место на Soho Square с щедрыми порциями левантийской кухни — хумус, мезе и гриль.", "type": "restaurant"},
+            {"name": "Hard Rock Cafe Sharm El Sheikh", "desc": "Часть всемирной рок-н-ролльной сети в Naama Bay с гигантской гитарой на крыше и коллекцией музыкальных реликвий — американская кухня и живая атмосфера.", "type": "restaurant"},
+            {"name": "Boharat Restaurant", "desc": "Ресторан ближневосточной и египетской кухни рядом с Naama Bay — настоящий, слегка острый вкус региона в спокойной обстановке.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "Four Seasons Resort Sharm El Sheikh", "stars": 5, "area": "Ras Um Sid"},
+            {"name": "Baron Resort Sharm El Sheikh", "stars": 5, "area": "Shark's Bay"},
+            {"name": "Sofitel Sharm El Sheikh", "stars": 5, "area": "Naama Bay"},
+            {"name": "Renaissance Sharm El Sheikh Golden View Beach Resort", "stars": 5, "area": "Ras Nasrani"},
+            {"name": "Tropitel Naama Bay", "stars": 5, "area": "Naama Bay"},
+            {"name": "JAZ Fayrouz", "stars": 4, "area": "Nabq Bay"},
+            {"name": "Xperience Hill-Top Beach Resort", "stars": 4, "area": "Ras Um Sid"},
+            {"name": "Sanafir Hotel Sharm El Sheikh", "stars": 3, "area": "Naama Bay"},
+            {"name": "Sharks Bay Oasis", "stars": 3, "area": "Shark's Bay"},
+        ],
+    },
+    "luxor": {
+        "attractions": [
+            {"name": "Valley of the Kings", "desc": "Долина, где похоронены десятки фараонов Нового царства, включая Тутанхамона — расписанные гробницы с сохранившимися красками, которым больше трёх тысяч лет.", "cat": "culture"},
+            {"name": "Karnak Temple", "desc": "Крупнейший храмовый комплекс Египта, строившийся на протяжении 2000 лет — Зал Гипостиля со 134 колоннами производит сильнейшее впечатление даже на равнодушных к истории.", "cat": "culture"},
+            {"name": "Luxor Temple", "desc": "Храм в самом центре города, особенно красив вечером при подсветке — компактнее Карнака, но не менее впечатляющий, с аллеей сфинксов, соединявшей их.", "cat": "culture"},
+            {"name": "Hatshepsut Temple (Deir el-Bahari)", "desc": "Заупокойный храм царицы Хатшепсут у скал западного берега Нила — уникальная террасная архитектура, непохожая ни на один другой памятник Египта.", "cat": "culture"},
+            {"name": "Colossi of Memnon", "desc": "Две гигантские каменные статуи фараона Аменхотепа III, стоящие в поле уже более 3400 лет — одно из первых, что видят туристы на западном берегу.", "cat": "culture"},
+            {"name": "Hot Air Balloon Ride over Luxor", "desc": "Полёт на воздушном шаре на рассвете над Долиной царей и Нилом — лучший способ увидеть масштаб фиванского некрополя сверху.", "cat": "fun"},
+            {"name": "Valley of the Queens", "desc": "Место захоронения жён и детей фараонов, включая знаменитую гробницу Нефертари с одними из лучших сохранившихся росписей Египта.", "cat": "culture"},
+            {"name": "Felucca Ride on the Nile", "desc": "Прогулка на традиционной парусной лодке по Нилу на закате — спокойный контраст насыщенному дню среди храмов и гробниц.", "cat": "nature"},
+        ],
+        "cafes": [
+            {"name": "Al-Sahaby Lane Restaurant", "desc": "Ресторан с террасой на крыше и видом на Луксорский храм и Нил — египетские мезе, фалафель и рагу в атмосферном месте у самого центра.", "type": "restaurant"},
+            {"name": "Sofra Restaurant & Cafe", "desc": "Ресторан в отреставрированной вилле 1930-х годов с внутренним двориком — домашняя египетская кухня в антикварном интерьере.", "type": "restaurant"},
+            {"name": "Aboudi Coffee Break", "desc": "Простое кафе с видом на Луксорский храм и площадь — быстрые сэндвичи, гриль и египетские блюда, удобно после осмотра храма.", "type": "cafe"},
+            {"name": "Nile Valley Restaurant & Cafe", "desc": "Кафе на западном берегу Нила с видом на реку и Луксорский храм — бургеры, фалафель и мезе на открытой террасе.", "type": "cafe"},
+            {"name": "El-Kababgy Luxor", "desc": "Ресторан у Нила при отеле Sonesta St. George, специализирующийся на гриле и традиционной египетской кухне.", "type": "restaurant"},
+            {"name": "1886 Restaurant (Sofitel Winter Palace)", "desc": "Изысканный ресторан французской кухни в исторической колониальной обстановке отеля Winter Palace 1886 года — для особого ужина в Луксоре.", "type": "restaurant"},
+        ],
+        "hotels": [
+            {"name": "Sofitel Winter Palace Luxor", "stars": 5, "area": "East Bank / Nile Corniche"},
+            {"name": "Steigenberger Nile Palace Luxor", "stars": 5, "area": "East Bank"},
+            {"name": "Hilton Luxor Resort & Spa", "stars": 5, "area": "East Bank / near Karnak"},
+            {"name": "Sonesta St. George Hotel Luxor", "stars": 5, "area": "East Bank / Nile Corniche"},
+            {"name": "Iberotel Luxor", "stars": 4, "area": "East Bank / Nile Corniche"},
+            {"name": "Eldeak Hotel Apartments", "stars": 4, "area": "West Bank"},
+            {"name": "Nile Panorama Hotel", "stars": 3, "area": "West Bank"},
+            {"name": "Nefertiti Hotel", "stars": 2, "area": "East Bank / near Luxor Temple"},
+            {"name": "El Mesala", "stars": 2, "area": "West Bank"},
+        ],
+    },
+    "hainan": {
+        "attractions": [
+            {"name": "Yanoda Rainforest Cultural Tourism Zone", "desc": "Единственный тропический лес Китая на широте 18° с. ш. — стеклянные смотровые площадки над пропастью, водопады и лианы; обязательная природная достопримечательность Хайнаня.", "cat": "nature"},
+            {"name": "Yalong Bay", "desc": "Бухта, которую часто называют «лучшим пляжем Китая» — 7,5 км мелкого белого песка и прозрачная бирюзовая вода, идеальны для спокойного пляжного отдыха.", "cat": "nature"},
+            {"name": "Nanshan Buddhist Cultural Zone", "desc": "Буддийский культурный парк со 108-метровой статуей богини Гуаньинь, стоящей прямо в море — один из крупнейших буддийских комплексов Китая.", "cat": "culture"},
+            {"name": "Wuzhizhou Island", "desc": "Островок у побережья Санья с коралловыми рифами — лучшее место региона для дайвинга, снорклинга и морских развлечений вроде полёта на параплане над водой.", "cat": "nature"},
+            {"name": "Tianya Haijiao (Ends of the Earth)", "desc": "«Край земли и край моря» — самая знаменитая смотровая площадка Санья с валунами, на которых высечены иероглифы, воспетые в китайской поэзии и кино.", "cat": "culture"},
+            {"name": "Luhuitou Park (Deer Turning Head Park)", "desc": "Парк на полуострове с панорамным видом на весь город Санья и легендой о девушке-оленихе, давшей Санья прозвище «город оленя»; вход бесплатный по паспорту.", "cat": "nature"},
+            {"name": "Sanya First Market", "desc": "Главный рыбный рынок Санья — купите свежих морепродуктов и тут же отнесите их в соседний ресторан, где приготовят так, как скажете.", "cat": "fun"},
+            {"name": "Atlantis Sanya & The Blue Whale Water Park", "desc": "Курортный комплекс с аквапарком, аквариумом и подводными номерами на Хайтанг-Бэй — развлечение на целый день для всей семьи.", "cat": "fun"},
+        ],
+        "cafes": [
+            {"name": "Linjie Seafood Flavor", "desc": "Рыбный ресторан с 20-летней историей у Sanya First Market, знаменитый острым крабом хэлэ и морепродуктами на пару — местные называют его вершиной морской кухни Санья.", "type": "restaurant"},
+            {"name": "Chunyuan Seafood Snack Booth", "desc": "Популярная уличная точка морепродуктов — жареная рыба, креветки на шпажках и кальмары, любимое место и туристов, и местных.", "type": "restaurant"},
+            {"name": "Lanyue Seafood Restaurant", "desc": "Просторный ресторан морепродуктов с большим выбором свежего улова и спокойной атмосферой — удобный вариант, если не хочется искать место на рынке.", "type": "restaurant"},
+            {"name": "Maan Coffee", "desc": "Атмосферная кофейня в районе Дадунхай с уютным интерьером и люстрами — хорошее место для кофе и десерта между пляжем и центром.", "type": "cafe"},
+            {"name": "Cozy Coffee", "desc": "Кафе в стиле тропического сада с зеленью и уютной верандой — приятная пауза в жару в юго-восточноазиатской атмосфере.", "type": "cafe"},
+        ],
+        "hotels": [
+            {"name": "Atlantis Sanya", "stars": 5, "area": "Haitang Bay"},
+            {"name": "The Ritz-Carlton Sanya, Yalong Bay", "stars": 5, "area": "Yalong Bay"},
+            {"name": "Sanya Marriott Yalong Bay Resort & Spa", "stars": 5, "area": "Yalong Bay"},
+            {"name": "Hilton Sanya Yalong Bay Resort & Spa", "stars": 5, "area": "Yalong Bay"},
+            {"name": "Wanda Reign Resort & Villas Sanya Haitang Bay", "stars": 5, "area": "Haitang Bay"},
+            {"name": "Conrad Sanya Haitang Bay", "stars": 5, "area": "Haitang Bay"},
+            {"name": "Pullman Oceanview Sanya Bay Resort & Spa", "stars": 5, "area": "Sanya Bay"},
+            {"name": "Shanhaitian Resort Sanya, Autograph Collection", "stars": 4, "area": "Dadonghai Bay"},
+            {"name": "Dadonghai Hotel Sanya", "stars": 3, "area": "Dadonghai Bay"},
+        ],
+    },
+}
+
+def _build_curated_index() -> dict:
+    idx = {}
+    for city_key, d in CURATED_VN.items():
+        idx[("vn", city_key)] = d
+    for city_key, d in CURATED_ID_SG.items():
+        code = "sg" if city_key == "singapore" else "id"
+        idx[(code, city_key)] = d
+    for city_key, d in CURATED_EG_CN.items():
+        code = "cn" if city_key == "hainan" else "eg"
+        idx[(code, city_key)] = d
+    return idx
+
+CURATED = _build_curated_index()
+
+CURATED_CAT_META = {
+    "nature": ("🌄", "Природа и виды", "🌄"),
+    "culture": ("🏛", "Культура и история", "🏛"),
+    "fun": ("🎢", "Развлечения", "🎢"),
+}
+CURATED_CAFE_TYPE_META = {
+    "cafe": ("☕", "Кафе", "☕"),
+    "restaurant": ("🍽", "Рестораны", "🍽"),
+}
+
+def _curated_attraction_to_item(c: dict) -> dict:
+    group_icon, group_label, item_icon = CURATED_CAT_META.get(c.get("cat", ""), ("📍", "Другое", "📍"))
+    return {
+        "name": c["name"], "desc": c.get("desc", ""), "wikidata": None, "tag_count": 999,
+        "cat_key": c.get("cat", "other"), "group_icon": group_icon, "group_label": group_label,
+        "item_icon": item_icon, "item_label": "", "curated": True,
+    }
+
+def _curated_cafe_to_item(c: dict) -> dict:
+    group_icon, group_label, item_icon = CURATED_CAFE_TYPE_META.get(c.get("type", ""), ("☕", "Кафе", "☕"))
+    return {
+        "name": c["name"], "desc": c.get("desc", ""), "wikidata": None, "tag_count": 999,
+        "cat_key": c.get("type", "cafe"), "group_icon": group_icon, "group_label": group_label,
+        "item_icon": item_icon, "item_label": "", "curated": True,
+    }
+
+def _curated_hotel_to_item(h: dict) -> dict:
+    return {
+        "name": h["name"], "stars": h.get("stars"), "area": h.get("area", ""),
+        "wikidata": None, "tag_count": 999, "curated": True,
+    }
+
 # ─── Перевод ──────────────────────────────────────────────────────────────────
 
 def translate_to_russian(text: str) -> str:
@@ -289,18 +791,37 @@ def translate_to_russian(text: str) -> str:
 
 WEATHER_ICONS = {"0":"☀️","1":"🌤","2":"⛅","3":"☁️","45":"🌫","48":"🌫","51":"🌦","61":"🌧","71":"❄️","80":"🌦","95":"⛈"}
 
+def _weather_open_meteo(lat: float, lon: float) -> tuple[int, str] | None:
+    url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
+           f"&current=temperature_2m,weathercode&timezone=auto")
+    req = urllib.request.Request(url, headers={"User-Agent": "sea-travel-bot/1.0"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        d = json.loads(r.read())
+    temp = round(d["current"]["temperature_2m"])
+    icon = WEATHER_ICONS.get(str(d["current"]["weathercode"]), "🌡")
+    return temp, icon
+
+def _weather_wttr(lat: float, lon: float) -> tuple[int, str] | None:
+    """Резервный источник — на случай если Open-Meteo недоступен именно с IP
+    хостинга (бесплатные публичные API иногда ограничивают конкретные
+    облачные подсети иначе, чем обычные домашние адреса)."""
+    url = f"https://wttr.in/{lat},{lon}?format=j1"
+    req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0"})
+    with urllib.request.urlopen(req, timeout=8) as r:
+        d = json.loads(r.read())
+    temp = round(float(d["current_condition"][0]["temp_C"]))
+    return temp, "🌡"
+
 def get_weather_one(name: str, lat: float, lon: float) -> str:
-    try:
-        url = (f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}"
-               f"&current=temperature_2m,weathercode&timezone=auto")
-        with urllib.request.urlopen(url, timeout=8) as r:
-            d = json.loads(r.read())
-        temp = round(d["current"]["temperature_2m"])
-        code = str(d["current"]["weathercode"])
-        icon = WEATHER_ICONS.get(code, "🌡")
-        return f"{icon} {name}: <b>{temp}°C</b>"
-    except:
-        return f"🌡 {name}: нет данных"
+    for source in (_weather_open_meteo, _weather_wttr):
+        try:
+            result = source(lat, lon)
+            if result:
+                temp, icon = result
+                return f"{icon} {name}: <b>{temp}°C</b>"
+        except Exception as e:
+            log.warning(f"Weather source {source.__name__} failed for {name}: {e}")
+    return f"🌡 {name}: нет данных"
 
 # ─── Отели (OpenStreetMap / Overpass API, без ключа) ──────────────────────────
 # У Agoda и Trip.com нет бесплатного публичного API — ссылки ведут на поиск
@@ -413,16 +934,20 @@ def _hotel_rank(h: dict):
     return (stars_val, h.get("tag_count", 0))
 
 def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
-    """Достаёт (с кэшированием) пул отелей города, выдаёт новую случайную
-    тридцатку и сортирует её от высокой оценки к низкой. Реальный сетевой
-    запрос к Overpass кэшируется надолго только при успехе — если все зеркала
-    недоступны, используем резервный список, но НЕ запоминаем его как
-    окончательный результат, чтобы следующая попытка снова сходила в Overpass
-    за настоящими данными, а не показывала одни и те же 3-4 отеля навсегда."""
+    """Кураторские отели (реальные, проверенные — см. CURATED) показываются
+    ВСЕГДА, независимо от Overpass, и идут первыми. Overpass — второй слой,
+    довесок случайными дополнительными вариантами поверх кураторского списка,
+    когда сеть отвечает; если все зеркала недоступны (частый случай — все три
+    падают одновременно), пользователь всё равно получает полноценный список,
+    а не резервные 3-4 названия."""
     city = find_city(country_code, city_key)
     if not city:
         return []
     cache_key = (country_code, city_key)
+    curated_raw = CURATED.get((country_code, city_key), {}).get("hotels", [])
+    curated = [_curated_hotel_to_item(h) for h in curated_raw]
+    curated_names = {c["name"].lower() for c in curated}
+
     pool = _city_hotel_cache.get(cache_key)
     if not pool:
         pool = _fetch_osm_hotels(city["lat"], city["lon"])
@@ -431,9 +956,13 @@ def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
     if not pool:
         fallback_names = FALLBACK_HOTELS.get(country_code, {}).get(city_key, [])
         pool = [{"name": n, "stars": None, "wikidata": None, "tag_count": 0} for n in fallback_names]
-    if not pool:
+    pool = [h for h in pool if h["name"].lower() not in curated_names]
+
+    if not curated and not pool:
         return []
-    chosen = random.sample(pool, min(HOTEL_POOL_SHOW, len(pool)))
+    extra_n = max(0, HOTEL_POOL_SHOW - len(curated))
+    extra = random.sample(pool, min(extra_n, len(pool))) if pool else []
+    chosen = curated + extra
     chosen.sort(key=_hotel_rank, reverse=True)
     _shown_hotels_cache[cache_key] = chosen
     return chosen
@@ -531,6 +1060,8 @@ def fmt_hotels_header(city: dict, country_name: str, count: int) -> str:
 def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
     name = html.escape(h["name"])
     stars = _stars_str(h.get("stars"))
+    area = h.get("area")
+    area_str = f" · 📍{html.escape(area)}" if area else ""
     q = urllib.parse.quote(f"{h['name']} {city_en}")
     # Agoda/Trip.com не открывали конкретный отель (нет бесплатного текстового
     # поиска) — Booking.com показывает отфильтрованный список по запросу,
@@ -538,7 +1069,7 @@ def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
     # рейтинг и отзывы гостей (в отличие от звёздности из OSM).
     booking = f"https://www.booking.com/searchresults.html?ss={q}"
     gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
-    return f"{i}. <b>{name}</b>{stars} — <a href=\"{booking}\">Booking.com</a> · <a href=\"{gmaps}\">Google Maps (отзывы)</a>"
+    return f"{i}. <b>{name}</b>{stars}{area_str} — <a href=\"{booking}\">Booking.com</a> · <a href=\"{gmaps}\">Google Maps (отзывы)</a>"
 
 # ─── Фото города (гарантированный визуал) ──────────────────────────────────────
 # Фото конкретного отеля есть очень редко (Дананг: 1 из 561!). Зато у самого
@@ -708,20 +1239,33 @@ def _poi_sort_key(item: dict):
     return (CATEGORY_ORDER.get(item.get("cat_key"), 9), -item.get("tag_count", 0))
 
 def shuffle_city_poi(kind: str, country_code: str, city_key: str) -> list[dict]:
-    """Тот же принцип, что и у отелей: реальный запрос к Overpass кэшируется
-    надолго только при успехе, дальше — мгновенное перемешивание в памяти."""
+    """Тот же принцип, что и у отелей: кураторские места (реальные,
+    рекомендованные, с описанием — см. CURATED) показываются всегда, первыми
+    в своей категории; Overpass — довесок поверх них, когда сеть отвечает
+    (публичные зеркала нередко падают все разом, самостоятельным источником
+    быть не могут)."""
     city = find_city(country_code, city_key)
     if not city:
         return []
     cache_key = (kind, country_code, city_key)
+    curated_field = "attractions" if kind == "attractions" else "cafes"
+    convert = _curated_attraction_to_item if kind == "attractions" else _curated_cafe_to_item
+    curated_raw = CURATED.get((country_code, city_key), {}).get(curated_field, [])
+    curated = [convert(c) for c in curated_raw]
+    curated_names = {c["name"].lower() for c in curated}
+
     pool = _city_poi_cache.get(cache_key)
     if not pool:
         pool = _fetch_osm_poi(kind, city["lat"], city["lon"])
         if pool:
             _city_poi_cache[cache_key] = pool
-    if not pool:
+    pool = [p for p in (pool or []) if p["name"].lower() not in curated_names]
+
+    if not curated and not pool:
         return []
-    chosen = random.sample(pool, min(POI_POOL_SHOW, len(pool)))
+    extra_n = max(0, POI_POOL_SHOW - len(curated))
+    extra = random.sample(pool, min(extra_n, len(pool))) if pool else []
+    chosen = curated + extra
     chosen.sort(key=_poi_sort_key)
     _shown_poi_cache[cache_key] = chosen
     return chosen
@@ -764,7 +1308,9 @@ def fmt_poi_line(i: int, item: dict, city_en: str) -> str:
     icon = item.get("item_icon", "📍")
     q = urllib.parse.quote(f"{item['name']} {city_en}")
     gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
-    return f"{i}. {icon} <b>{name}</b> — <a href=\"{gmaps}\">Google Maps</a>"
+    desc = item.get("desc")
+    desc_line = f"\n    <i>{html.escape(desc)}</i>" if desc else ""
+    return f"{i}. {icon} <b>{name}</b>{desc_line}\n    <a href=\"{gmaps}\">Google Maps</a>"
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
 
@@ -1024,16 +1570,34 @@ def current_kb(state: dict):
         return countries_kb()
     if screen == "cities":
         return cities_kb(state.get("country"))
-    if screen in ("city", "hotels", "poi"):
+    if screen in ("city", "hotels", "poi", "hotels_star_filter", "hotels_area_filter"):
         return city_kb()
     return main_kb()
 
-def hotels_kb(offset: int, total: int):
+def hotels_kb(offset: int, total: int, filtered: bool = False):
     rows = []
     next_offset = offset + HOTEL_PAGE_SIZE
     if next_offset < total:
         rows.append([f"▶️ Ещё {min(HOTEL_PAGE_SIZE, total - next_offset)}"])
+    rows.append(["⭐ Фильтр по звёздам", "🏖 Фильтр по району"])
+    if filtered:
+        rows.append(["♻️ Сбросить фильтр"])
     rows.append(["🔀 Показать другие 30"])
+    rows.append(["⬅️ Назад", "🏠 Главное меню"])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
+
+def hotel_star_filter_kb():
+    return ReplyKeyboardMarkup(
+        [["⭐⭐⭐⭐⭐ 5", "⭐⭐⭐⭐ 4"],
+         ["⭐⭐⭐ 3 и ниже"],
+         ["♻️ Сбросить фильтр"],
+         ["⬅️ Назад", "🏠 Главное меню"]],
+        resize_keyboard=True, is_persistent=True,
+    )
+
+def hotel_area_filter_kb(areas: list[str]):
+    rows = [areas[i:i + 2] for i in range(0, len(areas), 2)]
+    rows.append(["♻️ Сбросить фильтр"])
     rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
@@ -1087,11 +1651,11 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ─── Отели: отправка страницы (текст + фото где есть) ─────────────────────────
 
 async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: str, city_key: str,
-                            city: dict, hotels: list[dict], offset: int):
+                            city: dict, hotels: list[dict], offset: int, filtered: bool = False):
     country_name = COUNTRIES.get(code, ("", ""))[1]
     if not hotels:
         await ctx.bot.send_message(chat_id, fmt_hotels_header(city, country_name, 0),
-                                    parse_mode="HTML", reply_markup=hotels_kb(0, 0))
+                                    parse_mode="HTML", reply_markup=hotels_kb(0, 0, filtered))
         return
     if offset == 0:
         city_photo = await asyncio.to_thread(get_city_photo, city)
@@ -1105,7 +1669,7 @@ async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: s
     await asyncio.to_thread(_translate_page_names, page)
     await asyncio.to_thread(_resolve_page_photos, page, city_en)
     header = fmt_hotels_header(city, country_name, len(hotels))
-    await ctx.bot.send_message(chat_id, header, parse_mode="HTML", reply_markup=hotels_kb(offset, len(hotels)))
+    await ctx.bot.send_message(chat_id, header, parse_mode="HTML", reply_markup=hotels_kb(offset, len(hotels), filtered))
     text_lines = []
     for j, h in enumerate(page):
         i = offset + j + 1
@@ -1222,7 +1786,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if len(cities) == 1:
             city = cities[0]
             set_state(chat_id, screen="city", country=code, city=city["key"])
-            await update.message.reply_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb())
+            await update.message.reply_text(await asyncio.to_thread(fmt_city_card, code, city), parse_mode="HTML", reply_markup=city_kb())
         else:
             set_state(chat_id, screen="cities", country=code, city=None)
             flag, name = COUNTRIES[code]
@@ -1237,7 +1801,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         code, city_key = CITY_LABEL_TO_KEY[text]
         city = find_city(code, city_key)
         set_state(chat_id, screen="city", country=code, city=city_key)
-        await update.message.reply_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb())
+        await update.message.reply_text(await asyncio.to_thread(fmt_city_card, code, city), parse_mode="HTML", reply_markup=city_kb())
         return
 
     # ── Новости / виза / рейсы (уровень страны, доступны из cities и city) ──
@@ -1253,7 +1817,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if text == "🗺️ Виза" and state.get("country"):
         await update.message.reply_text(
             VISA_INFO.get(state["country"], "Информация недоступна"),
-            parse_mode="HTML", reply_markup=current_kb(state),
+            parse_mode="HTML", reply_markup=current_kb(state), disable_web_page_preview=True,
         )
         return
 
@@ -1275,17 +1839,17 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not _city_hotel_cache.get((code, city_key)):
             await update.message.reply_text(f"⏳ Ищу отели — {city['name']}...")
         hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
-        set_state(chat_id, screen="hotels", hotel_offset=0)
+        set_state(chat_id, screen="hotels", hotel_offset=0, hotel_filter=None)
         await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
         return
 
     if text.startswith("▶️ Ещё") and state.get("screen") == "hotels":
         code, city_key = state.get("country"), state.get("city")
         city = find_city(code, city_key)
-        hotels = _shown_hotels_cache.get((code, city_key)) or []
+        hotels = state.get("hotel_filter") or _shown_hotels_cache.get((code, city_key)) or []
         offset = state.get("hotel_offset", 0) + HOTEL_PAGE_SIZE
         set_state(chat_id, hotel_offset=offset)
-        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, offset)
+        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, offset, filtered=bool(state.get("hotel_filter")))
         return
 
     if text == "🔀 Показать другие 30" and state.get("screen") == "hotels":
@@ -1294,8 +1858,55 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not _city_hotel_cache.get((code, city_key)):
             await update.message.reply_text(f"⏳ Ищу отели — {city['name']}...")
         hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
-        set_state(chat_id, hotel_offset=0)
+        set_state(chat_id, hotel_offset=0, hotel_filter=None)
         await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
+        return
+
+    if text == "⭐ Фильтр по звёздам" and state.get("screen") == "hotels":
+        set_state(chat_id, screen="hotels_star_filter")
+        await update.message.reply_text("Выбери минимальную звёздность:", reply_markup=hotel_star_filter_kb())
+        return
+
+    if text == "🏖 Фильтр по району" and state.get("screen") == "hotels":
+        code, city_key = state.get("country"), state.get("city")
+        curated_raw = CURATED.get((code, city_key), {}).get("hotels", [])
+        areas = sorted({h["area"] for h in curated_raw if h.get("area")})
+        if not areas:
+            await update.message.reply_text("Для этого города пока нет данных по районам/пляжам.", reply_markup=current_kb(state))
+            return
+        set_state(chat_id, screen="hotels_area_filter", hotel_areas=areas)
+        await update.message.reply_text("Выбери район/пляж:", reply_markup=hotel_area_filter_kb(areas))
+        return
+
+    if state.get("screen") == "hotels_star_filter" and text in ("⭐⭐⭐⭐⭐ 5", "⭐⭐⭐⭐ 4", "⭐⭐⭐ 3 и ниже"):
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        base = _shown_hotels_cache.get((code, city_key)) or []
+        if text.startswith("⭐⭐⭐⭐⭐"):
+            filtered_list = [h for h in base if (h.get("stars") or 0) >= 5]
+        elif text.startswith("⭐⭐⭐⭐ "):
+            filtered_list = [h for h in base if (h.get("stars") or 0) >= 4]
+        else:
+            filtered_list = [h for h in base if not h.get("stars") or h.get("stars", 0) <= 3]
+        set_state(chat_id, screen="hotels", hotel_offset=0, hotel_filter=filtered_list)
+        await send_hotels_page(ctx, chat_id, code, city_key, city, filtered_list, 0, filtered=True)
+        return
+
+    if state.get("screen") == "hotels_area_filter" and text in (state.get("hotel_areas") or []):
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        base = _shown_hotels_cache.get((code, city_key)) or []
+        filtered_list = [h for h in base if h.get("area") == text]
+        set_state(chat_id, screen="hotels", hotel_offset=0, hotel_filter=filtered_list)
+        await send_hotels_page(ctx, chat_id, code, city_key, city, filtered_list, 0, filtered=True)
+        return
+
+    if text == "♻️ Сбросить фильтр" and state.get("screen") in ("hotels", "hotels_star_filter", "hotels_area_filter"):
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        hotels = _shown_hotels_cache.get((code, city_key)) or []
+        set_state(chat_id, screen="hotels", hotel_offset=0, hotel_filter=None)
+        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0, filtered=False)
         return
 
     # ── Достопримечательности / кафе ──
@@ -1343,11 +1954,17 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Назад ──
     if text == "⬅️ Назад":
         screen = state.get("screen", "root")
-        if screen in ("hotels", "poi"):
+        if screen in ("hotels_star_filter", "hotels_area_filter"):
+            code, city_key = state.get("country"), state.get("city")
+            city = find_city(code, city_key)
+            hotels = state.get("hotel_filter") or _shown_hotels_cache.get((code, city_key)) or []
+            set_state(chat_id, screen="hotels")
+            await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, state.get("hotel_offset", 0), filtered=bool(state.get("hotel_filter")))
+        elif screen in ("hotels", "poi"):
             code, city_key = state.get("country"), state.get("city")
             city = find_city(code, city_key)
             set_state(chat_id, screen="city")
-            await update.message.reply_text(fmt_city_card(code, city), parse_mode="HTML", reply_markup=city_kb())
+            await update.message.reply_text(await asyncio.to_thread(fmt_city_card, code, city), parse_mode="HTML", reply_markup=city_kb())
         elif screen == "city":
             code = state.get("country")
             cities = CITIES.get(code, [])
