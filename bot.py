@@ -1575,7 +1575,26 @@ def main_kb():
     return ReplyKeyboardMarkup(
         [["📍 Страны"],
          ["🌴 Все новости", "💱 Курс валют"],
-         ["🔔 Подписаться", "ℹ️ О боте"]],
+         ["🔔 Рассылка новостей", "ℹ️ О боте"]],
+        resize_keyboard=True, is_persistent=True,
+    )
+
+def fmt_news_settings(subscribed: bool) -> str:
+    status = "✅ подписан(а) на автоматическую рассылку" if subscribed else "🔕 подписки нет — новости только вручную"
+    return (
+        "📰 <b>Новости — как получать?</b>\n\n"
+        f"Сейчас: {status}\n\n"
+        "🔔 <b>Автоматически</b> — дайджест каждое утро в 10:00 по Алматы, "
+        "ничего не нужно нажимать\n"
+        "📖 <b>Вручную</b> — свежие новости в любой момент по кнопке «Показать сейчас» "
+        "или «Все новости» в главном меню\n\n"
+        "Выбери, как удобнее:"
+    )
+
+def news_settings_kb(subscribed: bool):
+    toggle = ["🔕 Отписаться"] if subscribed else ["🔔 Подписаться"]
+    return ReplyKeyboardMarkup(
+        [toggle, ["📖 Показать сейчас"], ["⬅️ Назад", "🏠 Главное меню"]],
         resize_keyboard=True, is_persistent=True,
     )
 
@@ -1804,12 +1823,33 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(get_rates(), parse_mode="HTML", reply_markup=main_kb())
         return
 
-    if text == "🔔 Подписаться":
+    if text == "🔔 Рассылка новостей":
+        set_state(chat_id, screen="news_settings")
+        await update.message.reply_text(
+            fmt_news_settings(is_subscribed(chat_id)),
+            parse_mode="HTML", reply_markup=news_settings_kb(is_subscribed(chat_id)),
+        )
+        return
+
+    if text == "🔔 Подписаться" and state.get("screen") == "news_settings":
         add_subscriber(chat_id)
         await update.message.reply_text(
-            "✅ Подписка оформлена!\nДайджест каждое утро в <b>10:00 по Алматы</b>.",
-            parse_mode="HTML", reply_markup=main_kb(),
+            fmt_news_settings(True), parse_mode="HTML", reply_markup=news_settings_kb(True),
         )
+        return
+
+    if text == "🔕 Отписаться" and state.get("screen") == "news_settings":
+        remove_subscriber(chat_id)
+        await update.message.reply_text(
+            fmt_news_settings(False), parse_mode="HTML", reply_markup=news_settings_kb(False),
+        )
+        return
+
+    if text == "📖 Показать сейчас" and state.get("screen") == "news_settings":
+        msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
+        news = fetch_news()
+        for n in news: mark_sent(n["hash"])
+        await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
         return
 
     if text == "ℹ️ О боте":
