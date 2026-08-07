@@ -52,6 +52,10 @@ RSS_FEEDS = [
     {"name": "AsiaOne Travel", "url": "https://www.asiaone.com/rss/travel.xml", "flag": "✈️", "country": "sg"},
     {"name": "TTR Weekly",     "url": "https://www.ttrweekly.com/site/feed/", "flag": "📰", "country": "all"},
     {"name": "Egypt Independent", "url": "https://egyptindependent.com/feed/", "flag": "🇪🇬", "country": "eg"},
+    {"name": "Google News: Hainan Travel",
+     "url": "https://news.google.com/rss/search?q=%22Hainan%22+OR+%22Sanya%22+travel+tourism&hl=en-US&gl=US&ceid=US:en",
+     "flag": "🇨🇳", "country": "cn"},
+    {"name": "Tropical Hainan", "url": "https://tropicalhainan.com/feed", "flag": "🇨🇳", "country": "cn"},
 ]
 
 COUNTRY_KEYWORDS = {
@@ -61,7 +65,15 @@ COUNTRY_KEYWORDS = {
     "eg": ["egypt","cairo","luxor","aswan","hurghada","sharm el sheikh","alexandria","giza","pyramids","red sea","nile"],
     "cn": ["china","hainan","sanya","haikou"],
 }
-ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["eg"] + COUNTRY_KEYWORDS["cn"] + ["beach","resort","diving","island","visa","flight","travel","tourism","hotel","tour"]
+# Общие "туристические" слова — отдельно от топонимов. Упоминание одного лишь
+# города/страны в новости ещё не значит, что новость про туризм (могла быть
+# про политику, бизнес, спорт и т.д.) — is_relevant() требует и то, и другое.
+TOURISM_TOPIC_KEYWORDS = [
+    "travel", "tourism", "tourist", "tour", "visa", "flight", "airline", "airport",
+    "hotel", "resort", "beach", "destination", "vacation", "holiday", "cruise",
+    "sightseeing", "backpack", "itinerary", "visitor", "attraction",
+]
+ALL_KEYWORDS = COUNTRY_KEYWORDS["vn"] + COUNTRY_KEYWORDS["id"] + COUNTRY_KEYWORDS["sg"] + COUNTRY_KEYWORDS["eg"] + COUNTRY_KEYWORDS["cn"] + TOURISM_TOPIC_KEYWORDS
 
 # Таймзоны для отображения локального времени — единая на страну (все города
 # каждой страны здесь лежат в одном часовом поясе, отдельная таблица не нужна)
@@ -455,24 +467,51 @@ def _fetch_hotel_photo_bytes(qid: str) -> bytes | None:
     except Exception:
         return None
 
-def _resolve_page_photos(page: list[dict]) -> None:
-    """Подтягивает фото только для текущей отображаемой страницы (10 отелей),
-    а не для всех 30 — иначе ожидание было бы намного дольше. Мутирует
-    элементы page на месте, добавляя ключ 'photo_bytes'."""
-    candidates = [h for h in page if h.get("wikidata")]
-    if not candidates:
+def _name_matches_file_title(name: str, file_title: str) -> bool:
+    """Sanity-check перед тем как подставить фото по текстовому поиску (не через
+    Wikidata) — без этого можно случайно прицепить чужую картинку к чужому
+    названию. Требуем хотя бы одно значимое общее слово (без родовых вроде
+    'hotel'/'resort'), а не просто 'что-то нашлось'."""
+    stopwords = {"hotel", "resort", "the", "and", "spa", "inn", "villa", "villas"}
+    def words(s):
+        return {w.lower() for w in re.findall(r"[a-zA-Zа-яА-Я]{3,}", s)} - stopwords
+    return bool(words(name) & words(file_title))
+
+def _fetch_named_photo_bytes(name: str, city_en: str) -> bytes | None:
+    """Фолбэк, когда у объекта в OSM нет привязки к Wikidata (у отелей и кафе
+    это почти всегда так) — ищем фото по названию напрямую в Wikimedia
+    Commons, с проверкой совпадения слов, чтобы не подставить не то фото."""
+    title = _search_commons_file(f"{name} {city_en}")
+    if not title or not _name_matches_file_title(name, title):
+        return None
+    return _download_commons_file(title)
+
+def _resolve_one_photo(item: dict, city_en: str) -> bytes | None:
+    qid = item.get("wikidata")
+    if qid:
+        photo = _fetch_hotel_photo_bytes(qid)
+        if photo:
+            return photo
+    return _fetch_named_photo_bytes(item["name"], city_en)
+
+def _resolve_page_photos(page: list[dict], city_en: str) -> None:
+    """Подтягивает фото только для текущей отображаемой страницы (10 штук),
+    а не для всех 30 — иначе ожидание было бы намного дольше. Сначала пробует
+    Wikidata (если есть привязка в OSM), затем — поиск по названию в Commons
+    напрямую. Мутирует элементы page на месте, добавляя ключ 'photo_bytes'."""
+    if not page:
         return
-    with ThreadPoolExecutor(max_workers=min(6, len(candidates))) as pool:
-        futures = {pool.submit(_fetch_hotel_photo_bytes, h["wikidata"]): h for h in candidates}
+    with ThreadPoolExecutor(max_workers=min(6, len(page))) as pool:
+        futures = {pool.submit(_resolve_one_photo, h, city_en): h for h in page}
         try:
-            for future in as_completed(futures, timeout=18):
+            for future in as_completed(futures, timeout=20):
                 h = futures[future]
                 try:
                     h["photo_bytes"] = future.result()
                 except Exception:
                     h["photo_bytes"] = None
         except Exception as e:
-            log.warning(f"Wikidata photo lookup timed out: {e}")
+            log.warning(f"Photo lookup timed out: {e}")
 
 def _stars_str(stars) -> str:
     try:
@@ -833,7 +872,12 @@ def news_hash(entry):
 def is_relevant(entry, country=None):
     text = (entry.get("title","") + " " + entry.get("summary","") + " " + entry.get("link","")).lower()
     if country:
-        return any(kw in text for kw in COUNTRY_KEYWORDS.get(country, []))
+        place_match = any(kw in text for kw in COUNTRY_KEYWORDS.get(country, []))
+        if not place_match:
+            return False
+        # Упоминания топонима недостаточно — например, "China" встречается и в
+        # новостях про политику/бизнес. Требуем ещё и туристическую тематику.
+        return any(kw in text for kw in TOURISM_TOPIC_KEYWORDS)
     return any(kw in text for kw in ALL_KEYWORDS)
 
 def fetch_news(limit=MAX_NEWS, country=None):
@@ -1057,9 +1101,9 @@ async def send_hotels_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, code: s
             except Exception as e:
                 log.warning(f"Send city photo failed: {e}")
     page = hotels[offset:offset + HOTEL_PAGE_SIZE]
-    await asyncio.to_thread(_translate_page_names, page)
-    await asyncio.to_thread(_resolve_page_photos, page)
     city_en = city.get("en", city["name"])
+    await asyncio.to_thread(_translate_page_names, page)
+    await asyncio.to_thread(_resolve_page_photos, page, city_en)
     header = fmt_hotels_header(city, country_name, len(hotels))
     await ctx.bot.send_message(chat_id, header, parse_mode="HTML", reply_markup=hotels_kb(offset, len(hotels)))
     text_lines = []
@@ -1095,10 +1139,10 @@ async def send_poi_page(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, kind: str,
             except Exception as e:
                 log.warning(f"Send city photo failed: {e}")
     page = items[offset:offset + POI_PAGE_SIZE]
+    city_en = city.get("en", city["name"])
     await asyncio.to_thread(_translate_page_names, page)
     if cfg["photos"]:
-        await asyncio.to_thread(_resolve_page_photos, page)
-    city_en = city.get("en", city["name"])
+        await asyncio.to_thread(_resolve_page_photos, page, city_en)
     header = fmt_poi_header(kind, city, country_name, len(items))
     await ctx.bot.send_message(chat_id, header, parse_mode="HTML", reply_markup=poi_kb(offset, len(items)))
     text_lines = []
