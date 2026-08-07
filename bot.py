@@ -1353,7 +1353,12 @@ def fmt_poi_line(i: int, item: dict, city_en: str) -> str:
     icon = item.get("item_icon", "📍")
     q = urllib.parse.quote(f"{item['name']} {city_en}")
     gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
-    desc = item.get("desc")
+    # У кураторских мест есть полноценное desc; у "довесочных" из OSM его нет —
+    # тогда берём хотя бы тип объекта (item_label, уже вычислен в _classify_poi),
+    # чтобы под названием никогда не было пусто, особенно важно для
+    # китайских топонимов в пиньине, которые сами по себе ничего не говорят.
+    desc = item.get("desc") or item.get("item_label", "")
+    desc = desc[0:1].upper() + desc[1:] if desc else ""
     desc_line = f"\n    <i>{html.escape(desc)}</i>" if desc else ""
     return f"{i}. {icon} <b>{name}</b>{desc_line}\n    <a href=\"{gmaps}\">Google Maps</a>"
 
