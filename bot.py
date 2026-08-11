@@ -1388,10 +1388,14 @@ def get_rates() -> str:
         idr = data.get("idr", 0)
         sgd = data.get("sgd", 0)
         eur = data.get("eur", 0)
+        cny = data.get("cny", 0)
+        egp = data.get("egp", 0)
 
         kzt_to_vnd = vnd / kzt * 1000 if kzt else 0
         kzt_to_idr = idr / kzt * 1000 if kzt else 0
         kzt_to_sgd = sgd / kzt * 1000 if kzt else 0
+        kzt_to_cny = cny / kzt * 1000 if kzt else 0
+        kzt_to_egp = egp / kzt * 1000 if kzt else 0
 
         return (
             "💱 <b>Курс валют</b>\n\n"
@@ -1399,7 +1403,9 @@ def get_rates() -> str:
             f"🇪🇺 1 EUR = <b>{kzt/eur:,.0f} KZT</b>\n\n"
             f"🇻🇳 1000 KZT = <b>{kzt_to_vnd:,.0f} VND</b>\n"
             f"🇮🇩 1000 KZT = <b>{kzt_to_idr:,.0f} IDR</b>\n"
-            f"🇸🇬 1000 KZT = <b>{kzt_to_sgd:.2f} SGD</b>\n\n"
+            f"🇸🇬 1000 KZT = <b>{kzt_to_sgd:.2f} SGD</b>\n"
+            f"🇨🇳 1000 KZT = <b>{kzt_to_cny:.2f} CNY</b>\n"
+            f"🇪🇬 1000 KZT = <b>{kzt_to_egp:.2f} EGP</b>\n\n"
             f"<i>Данные: fawazahmed0 Currency API</i>"
         )
     except Exception as e:
