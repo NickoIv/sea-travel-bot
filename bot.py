@@ -1472,14 +1472,18 @@ def remove_subscriber(uid):
 def is_subscribed(uid):
     return uid in load_data()["subscribers"]
 
-def mark_sent(h):
+def mark_sent_many(hashes: list[str]):
+    """Одна загрузка + одно сохранение на весь дайджест сразу, а не по паре
+    Upstash-запросов на каждую новость по отдельности — раньше это было до
+    ~16 синхронных HTTP-вызовов подряд на 8 новостей, блокировавших
+    единственный event loop всего сервера (в т.ч. мешавших вовремя ответить
+    на сам /cron/daily, из-за чего внешний крон видел зависший запрос)."""
+    if not hashes:
+        return
     data = load_data()
-    data["sent_hashes"].append(h)
+    data["sent_hashes"].extend(hashes)
     data["sent_hashes"] = data["sent_hashes"][-500:]
     save_data(data)
-
-def is_sent(h):
-    return h in load_data()["sent_hashes"]
 
 # ─── RSS-парсинг ─────────────────────────────────────────────────────────────
 
@@ -1500,6 +1504,11 @@ def is_relevant(entry, country=None):
 def fetch_news(limit=MAX_NEWS, country=None):
     results = []
     seen = set()
+    # Раньше здесь на каждую новость (до ~180 за один сбор по всем фидам)
+    # был отдельный синхронный запрос is_sent() -> load_data() к Upstash —
+    # секунды блокировки event loop без всякой пользы. Грузим список уже
+    # отправленных хэшей один раз и дальше проверяем в памяти.
+    sent_hashes = set(load_data().get("sent_hashes", []))
     now = datetime.utcnow()
     for feed_cfg in RSS_FEEDS:
         if country and feed_cfg["country"] not in (country, "all"):
@@ -1508,7 +1517,7 @@ def fetch_news(limit=MAX_NEWS, country=None):
             feed = feedparser.parse(feed_cfg["url"])
             for entry in feed.entries[:20]:
                 h = news_hash(entry)
-                if h in seen or is_sent(h):
+                if h in seen or h in sent_hashes:
                     continue
                 if not is_relevant(entry, country):
                     continue
@@ -1840,8 +1849,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if text == "🌴 Все новости":
         msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
-        news = fetch_news()
-        for n in news: mark_sent(n["hash"])
+        news = await asyncio.to_thread(fetch_news)
+        mark_sent_many([n["hash"] for n in news])
         await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
         return
 
@@ -1873,8 +1882,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if text == "📖 Показать сейчас" and state.get("screen") == "news_settings":
         msg = await update.message.reply_text("⏳ Собираю и перевожу новости...")
-        news = fetch_news()
-        for n in news: mark_sent(n["hash"])
+        news = await asyncio.to_thread(fetch_news)
+        mark_sent_many([n["hash"] for n in news])
         await msg.edit_text(fmt_digest(news), parse_mode="HTML", disable_web_page_preview=True)
         return
 
@@ -1920,8 +1929,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         code = state["country"]
         name = COUNTRIES.get(code, ("", ""))[1]
         msg = await update.message.reply_text("⏳ Собираю новости...")
-        news = fetch_news(country=code)
-        for n in news: mark_sent(n["hash"])
+        news = await asyncio.to_thread(fetch_news, country=code)
+        mark_sent_many([n["hash"] for n in news])
         await msg.edit_text(fmt_digest(news, title=f"Новости — {name}"), parse_mode="HTML", disable_web_page_preview=True)
         return
 
@@ -2100,12 +2109,12 @@ async def send_daily_digest(bot):
     """Общее тело ежедневной рассылки — вызывается либо из JobQueue (локальный
     polling-режим), либо из HTTP /cron/daily, который дёргает Cloud Scheduler
     (Cloud Run-режим, где нет собственного постоянно работающего планировщика)."""
-    data = load_data()
+    data = await asyncio.to_thread(load_data)
     if not data["subscribers"]: return
-    news = fetch_news()
+    news = await asyncio.to_thread(fetch_news)
     if not news: return
     text = fmt_digest(news)
-    for n in news: mark_sent(n["hash"])
+    await asyncio.to_thread(mark_sent_many, [n["hash"] for n in news])
     for uid in data["subscribers"]:
         try:
             await bot.send_message(uid, text, parse_mode="HTML", disable_web_page_preview=True)
