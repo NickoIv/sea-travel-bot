@@ -1012,6 +1012,28 @@ def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
     _shown_hotels_cache[cache_key] = chosen
     return chosen
 
+HOTEL_SEARCH_RESULTS_MAX = 15
+
+def search_hotels(country_code: str, city_key: str, query: str) -> list[dict]:
+    """Ищет по названию среди кураторских отелей и ВСЕГО кэша, полученного
+    от Overpass для города (_city_hotel_cache — обычно намного больше
+    показанной тридцатки), а не только среди уже отрисованной страницы —
+    так находится даже то, что не попало в текущую случайную подборку."""
+    q = query.strip().lower()
+    if not q:
+        return []
+    curated_raw = CURATED.get((country_code, city_key), {}).get("hotels", [])
+    curated = [_curated_hotel_to_item(h) for h in curated_raw]
+    pool = _city_hotel_cache.get((country_code, city_key)) or []
+    seen, results = set(), []
+    for h in curated + pool:
+        name_lower = h["name"].lower()
+        if q in name_lower and name_lower not in seen:
+            seen.add(name_lower)
+            results.append(h)
+    results.sort(key=_hotel_rank, reverse=True)
+    return results[:HOTEL_SEARCH_RESULTS_MAX]
+
 # Wikimedia Commons отдаёт 403 на прямые ссылки на файлы без описательного
 # User-Agent (часть их политики по борьбе со спамом хотлинков). Поэтому фото
 # скачиваем сами с этим заголовком и передаём в Telegram уже байтами — иначе
@@ -1706,7 +1728,7 @@ def current_kb(state: dict):
         return countries_kb()
     if screen == "cities":
         return cities_kb(state.get("country"))
-    if screen in ("city", "hotels", "poi", "hotels_star_filter", "hotels_area_filter"):
+    if screen in ("city", "hotels", "poi", "hotels_star_filter", "hotels_area_filter", "hotels_search_input"):
         return city_kb()
     return main_kb()
 
@@ -1716,11 +1738,18 @@ def hotels_kb(offset: int, total: int, filtered: bool = False):
     if next_offset < total:
         rows.append([f"▶️ Ещё {min(HOTEL_PAGE_SIZE, total - next_offset)}"])
     rows.append(["⭐ Фильтр по звёздам", "🏖 Фильтр по району"])
+    rows.append(["🔍 Поиск отеля"])
     if filtered:
         rows.append(["♻️ Сбросить фильтр"])
     rows.append(["🔀 Показать другие 30"])
     rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
+
+def hotel_search_kb():
+    return ReplyKeyboardMarkup(
+        [["⬅️ Назад", "🏠 Главное меню"]],
+        resize_keyboard=True, is_persistent=True,
+    )
 
 def hotel_star_filter_kb():
     return ReplyKeyboardMarkup(
@@ -2083,6 +2112,39 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
         return
 
+    if text == "🔍 Поиск отеля" and state.get("screen") == "hotels":
+        set_state(chat_id, screen="hotels_search_input")
+        await update.message.reply_text(
+            "Введи название отеля (целиком или часть) — поищу:",
+            reply_markup=hotel_search_kb(),
+        )
+        return
+
+    if (state.get("screen") == "hotels_search_input"
+            and text not in ("⬅️ Назад", "🏠 Главное меню")):
+        code, city_key = state.get("country"), state.get("city")
+        city = find_city(code, city_key)
+        city_en = city.get("en", city["name"])
+        results = await asyncio.to_thread(search_hotels, code, city_key, text)
+        if results:
+            await asyncio.to_thread(_translate_page_names, results)
+            lines = [fmt_hotel_line(i, h, city_en) for i, h in enumerate(results, 1)]
+            header = f"🔍 Найдено по запросу «{html.escape(text)}»: {len(results)}\n\n"
+            await update.message.reply_text(
+                header + "\n".join(lines), parse_mode="HTML",
+                disable_web_page_preview=True, reply_markup=hotel_search_kb(),
+            )
+        else:
+            q = urllib.parse.quote(f"{text} {city_en}")
+            booking = f"https://www.booking.com/searchresults.html?ss={q}"
+            gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
+            await update.message.reply_text(
+                f"😕 В нашей базе для {city['name']} такого не нашлось. Прямой поиск:\n"
+                f"<a href=\"{booking}\">Booking.com</a> · <a href=\"{gmaps}\">Google Maps</a>",
+                parse_mode="HTML", disable_web_page_preview=True, reply_markup=hotel_search_kb(),
+            )
+        return
+
     if text == "⭐ Фильтр по звёздам" and state.get("screen") == "hotels":
         set_state(chat_id, screen="hotels_star_filter")
         await update.message.reply_text("Выбери минимальную звёздность:", reply_markup=hotel_star_filter_kb())
@@ -2175,7 +2237,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Назад ──
     if text == "⬅️ Назад":
         screen = state.get("screen", "root")
-        if screen in ("hotels_star_filter", "hotels_area_filter"):
+        if screen in ("hotels_star_filter", "hotels_area_filter", "hotels_search_input"):
             code, city_key = state.get("country"), state.get("city")
             city = find_city(code, city_key)
             hotels = state.get("hotel_filter") or _shown_hotels_cache.get((code, city_key)) or []
