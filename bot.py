@@ -916,6 +916,7 @@ CURATED_EG_CN: dict = {
             {"name": "Hilton Sanya Yalong Bay Resort & Spa", "stars": 5, "area": "Yalong Bay"},
             {"name": "Wanda Reign Resort & Villas Sanya Haitang Bay", "stars": 5, "area": "Haitang Bay"},
             {"name": "Conrad Sanya Haitang Bay", "stars": 5, "area": "Haitang Bay"},
+            {"name": "Fairmont Sanya Haitang Bay", "stars": 5, "area": "Haitang Bay"},
             {"name": "Pullman Oceanview Sanya Bay Resort & Spa", "stars": 5, "area": "Sanya Bay"},
             {"name": "Shanhaitian Resort Sanya, Autograph Collection", "stars": 4, "area": "Dadonghai Bay"},
             {"name": "Dadonghai Hotel Sanya", "stars": 3, "area": "Dadonghai Bay"},
