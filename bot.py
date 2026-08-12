@@ -1076,16 +1076,49 @@ HOTEL_SEARCH_RESULTS_MAX = 15
 HOTEL_SEARCH_RADIUS_M = 8000
 # Поиск должен уметь находить ЛЮБОЙ отель, не только кураторский шорт-лист —
 # но ждать десятки секунд мёртвые зеркала Overpass (как было раньше) с
-# телефона выглядит как поломка. Бюджет здесь сильно короче, чем у
-# POI/погоды: если сеть недоступна, поиск быстро сдаётся и отдаёт то, что
-# нашлось в кураторских данных, вместо долгого зависания.
-HOTEL_OVERPASS_TIMEOUT_S = 5
+# телефона выглядит как поломка. Поэтому опрашиваем СРАЗУ два независимых
+# источника OSM-данных параллельно (разная инфраструктура — один нередко
+# жив, когда другой лежит) с общим коротким бюджетом времени.
+HOTEL_LIVE_TIMEOUT_S = 5
 
 _city_hotel_cache: dict[tuple, list] = {}
 
-def _fetch_osm_hotels_quick(lat: float, lon: float) -> list[dict]:
+def _search_nominatim_hotels(query: str, lat: float, lon: float) -> list[dict]:
+    """Nominatim — геокодинг-поиск OSM, отдельная от Overpass инфраструктура
+    с точечной задачей "найти по названию" (а не выгрузить всё в радиусе),
+    на практике часто быстрее и надёжнее Overpass. viewbox+bounded не даёт
+    найти отель с похожим названием на другом конце света."""
+    delta = 0.15  # ~15-17 км, с запасом покрывает город целиком
+    viewbox = f"{lon - delta},{lat + delta},{lon + delta},{lat - delta}"
+    resp = requests.get(
+        "https://nominatim.openstreetmap.org/search",
+        params={"q": query, "format": "json", "limit": 10, "viewbox": viewbox, "bounded": 1},
+        headers={"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder; https://github.com/NickoIv/sea-travel-bot)"},
+        timeout=HOTEL_LIVE_TIMEOUT_S - 1,
+    )
+    resp.raise_for_status()
+    hotel_types = {"hotel", "guest_house", "hostel", "motel", "apartment", "resort"}
+    hotels = []
+    for item in resp.json():
+        if item.get("class") != "tourism" or item.get("type") not in hotel_types:
+            continue
+        name = item.get("name") or item.get("display_name", "").split(",")[0]
+        if not name:
+            continue
+        hotels.append({"name": name[:70], "stars": None, "tag_count": 5})
+    return hotels
+
+def _fetch_overpass_hotel_pool(country_code: str, city_key: str, lat: float, lon: float) -> list[dict]:
+    """Полная выгрузка отелей города из Overpass — кэшируется на город при
+    успехе (та же выгрузка годится для любых будущих запросов по этому
+    городу), при неудаче не кэшируется, чтобы следующий поиск попробовал
+    ещё раз, а не оставался пустым навсегда."""
+    cache_key = (country_code, city_key)
+    cached = _city_hotel_cache.get(cache_key)
+    if cached:
+        return cached
     query = f"""
-[out:json][timeout:{HOTEL_OVERPASS_TIMEOUT_S}];
+[out:json][timeout:{HOTEL_LIVE_TIMEOUT_S}];
 (
   node["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
   way["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
@@ -1096,7 +1129,7 @@ out center tags;
         resp = requests.get(
             endpoint, params={"data": query},
             headers={"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder)"},
-            timeout=HOTEL_OVERPASS_TIMEOUT_S - 1,
+            timeout=HOTEL_LIVE_TIMEOUT_S - 1,
         )
         resp.raise_for_status()
         return resp.json()
@@ -1104,7 +1137,7 @@ out center tags;
     with ThreadPoolExecutor(max_workers=len(OVERPASS_ENDPOINTS)) as pool:
         futures = {pool.submit(_try, ep): ep for ep in OVERPASS_ENDPOINTS}
         try:
-            for future in as_completed(futures, timeout=HOTEL_OVERPASS_TIMEOUT_S):
+            for future in as_completed(futures, timeout=HOTEL_LIVE_TIMEOUT_S):
                 endpoint = futures[future]
                 try:
                     data = future.result()
@@ -1119,16 +1152,19 @@ out center tags;
                         continue
                     hotels.append({"name": name[:70], "stars": tags.get("stars"), "tag_count": len(tags)})
                 if hotels:
+                    _city_hotel_cache[cache_key] = hotels
                     return hotels
         except Exception as e:
             log.warning(f"Overpass mirrors all timed out (hotel search): {e}")
     return []
 
 def search_hotels(country_code: str, city_key: str, query: str) -> list[dict]:
-    """Ищет сначала среди кураторских отелей (мгновенно), затем добавляет
-    более широкий пул из OpenStreetMap с коротким сетевым бюджетом — так
-    находится и то, чего нет в шорт-листе, но поиск не зависает надолго,
-    если Overpass недоступен."""
+    """Ищет сначала среди кураторских отелей (мгновенно), затем — параллельно
+    у Nominatim (быстрый точечный поиск по названию) и Overpass (полная
+    выгрузка по городу, кэшируется) — оба независимы друг от друга и от
+    Overpass-инфраструктуры, общий бюджет ожидания не превышает
+    HOTEL_LIVE_TIMEOUT_S. Если Nominatim уже нашёл совпадение — не ждём
+    Overpass до конца бюджета."""
     q = query.strip().lower()
     if not q:
         return []
@@ -1136,18 +1172,46 @@ def search_hotels(country_code: str, city_key: str, query: str) -> list[dict]:
     curated = [_curated_hotel_to_item(h) for h in curated_raw]
     curated_names = {c["name"].lower() for c in curated}
 
-    cache_key = (country_code, city_key)
-    pool = _city_hotel_cache.get(cache_key)
-    if not pool:
-        city = find_city(country_code, city_key)
-        pool = _fetch_osm_hotels_quick(city["lat"], city["lon"]) if city else []
-        if pool:
-            _city_hotel_cache[cache_key] = pool
+    nominatim_results, overpass_pool = [], []
+    city = find_city(country_code, city_key)
+    if city:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = {
+                pool.submit(_search_nominatim_hotels, query, city["lat"], city["lon"]): "nominatim",
+                pool.submit(_fetch_overpass_hotel_pool, country_code, city_key, city["lat"], city["lon"]): "overpass",
+            }
+            try:
+                for future in as_completed(futures, timeout=HOTEL_LIVE_TIMEOUT_S):
+                    src = futures[future]
+                    try:
+                        result = future.result()
+                    except Exception as e:
+                        log.warning(f"{src} hotel search failed: {e}")
+                        continue
+                    if src == "nominatim":
+                        nominatim_results = result
+                        if result:
+                            break  # Nominatim сам оценил релевантность — не ждём Overpass
+                    else:
+                        overpass_pool = result
+            except Exception as e:
+                log.warning(f"Live hotel search budget exceeded: {e}")
 
     seen, results = set(), []
-    for h in curated + [p for p in pool if p["name"].lower() not in curated_names]:
+    # Кураторские и пул Overpass не query-специфичны (Overpass отдаёт всё
+    # подряд в радиусе) — фильтруем по вхождению подстроки сами.
+    for h in curated + [p for p in overpass_pool if p["name"].lower() not in curated_names]:
         name_lower = h["name"].lower()
         if q in name_lower and name_lower not in seen:
+            seen.add(name_lower)
+            results.append(h)
+    # А вот результатам Nominatim доверяем как есть — он уже сам искал
+    # именно по этому названию (в т.ч. может связать латинский запрос с
+    # объектом, у которого в OSM только китайское название) — повторная
+    # проверка "вхождения подстроки" здесь только теряла бы такие совпадения.
+    for h in nominatim_results:
+        name_lower = h["name"].lower()
+        if name_lower not in seen and name_lower not in curated_names:
             seen.add(name_lower)
             results.append(h)
     results.sort(key=_hotel_rank, reverse=True)
