@@ -16,10 +16,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time as dtime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import (
     Application, CommandHandler, ContextTypes,
-    MessageHandler, filters
+    MessageHandler, InlineQueryHandler, filters
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
@@ -879,8 +879,12 @@ OVERPASS_ENDPOINTS = [
     "https://overpass.private.coffee/api/interpreter",
 ]
 HOTEL_SEARCH_RADIUS_M = 8000
-HOTEL_POOL_SHOW = 30   # сколько отелей "раздаём" за один заход (перемешивание)
-HOTEL_PAGE_SIZE = 10   # сколько показываем за раз — дальше "Ещё 10" без похода в сеть
+HOTEL_POOL_SHOW = 15   # сколько отелей "раздаём" за один заход — с появлением
+# поиска по названию (search_hotels) длинный хвост случайных вариантов сверх
+# кураторского списка стал избыточен: искать конкретный отель теперь можно
+# напрямую, а не листать. Кураторские (обычно 9-10 на город) показываются
+# всегда первыми, тут только небольшой довесок для разнообразия.
+HOTEL_PAGE_SIZE = 10   # сколько показываем за раз — дальше "Ещё N" без похода в сеть
 
 # Небольшой резервный список реальных отелей на случай, если все зеркала
 # Overpass одновременно недоступны — чтобы раздел никогда не был пустым.
@@ -2290,6 +2294,53 @@ async def send_daily_job(ctx: ContextTypes.DEFAULT_TYPE):
     локальном polling-режиме)."""
     await send_daily_digest(ctx.bot)
 
+# ─── Inline-поиск отелей (@bot_name название — из любого чата) ────────────────
+# Настоящие "подсказки по мере набора" в Telegram работают только через
+# inline-режим, а не через обычные reply-кнопки. В отличие от остального
+# бота, inline-запрос не привязан к состоянию конкретного чата (никакой
+# текущей страны/города) — поэтому ищем сразу по всем городам.
+
+INLINE_SEARCH_LIMIT = 20
+
+async def inline_hotel_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = (update.inline_query.query or "").strip()
+    if len(query) < 2:
+        await update.inline_query.answer([], cache_time=5, is_personal=True)
+        return
+    q = query.lower()
+
+    def _search_all_cities():
+        seen, matches = set(), []
+        for code, cities in CITIES.items():
+            for c in cities:
+                curated_raw = CURATED.get((code, c["key"]), {}).get("hotels", [])
+                pool = _city_hotel_cache.get((code, c["key"])) or []
+                for h in [_curated_hotel_to_item(x) for x in curated_raw] + pool:
+                    name_lower = h["name"].lower()
+                    if q in name_lower and name_lower not in seen:
+                        seen.add(name_lower)
+                        matches.append((h, code, c))
+        matches.sort(key=lambda m: _hotel_rank(m[0]), reverse=True)
+        return matches[:INLINE_SEARCH_LIMIT]
+
+    matches = await asyncio.to_thread(_search_all_cities)
+
+    results = []
+    for h, code, c in matches:
+        city_en = c.get("en", c["name"])
+        line = fmt_hotel_line(1, h, city_en)
+        line = line.split(". ", 1)[1] if line.startswith("1. ") else line
+        _, country_name = COUNTRIES.get(code, ("", ""))
+        stars = _stars_str(h.get("stars")).strip()
+        desc = f"{c['name']}, {country_name}" + (f" · {stars}" if stars else "")
+        results.append(InlineQueryResultArticle(
+            id=hashlib.md5(f"{code}{c['key']}{h['name']}".encode()).hexdigest(),
+            title=h["name"],
+            description=desc,
+            input_message_content=InputTextMessageContent(line, parse_mode="HTML", disable_web_page_preview=True),
+        ))
+    await update.inline_query.answer(results, cache_time=30, is_personal=True)
+
 # ─── Запуск ──────────────────────────────────────────────────────────────────
 # Локально (WEBHOOK_MODE не задан и платформа не прописала свою переменную)
 # бот работает как раньше через run_polling + JobQueue. На хостинге вроде
@@ -2305,6 +2356,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(InlineQueryHandler(inline_hotel_search))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     return app
 
