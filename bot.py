@@ -10,6 +10,7 @@ import urllib.request
 import urllib.parse
 import re
 import requests
+import time
 from pypinyin import pinyin, Style
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time as dtime, timezone
@@ -1378,39 +1379,75 @@ def fmt_poi_line(i: int, item: dict, city_en: str) -> str:
     return f"{i}. {icon} <b>{name}</b>{desc_line}\n    <a href=\"{gmaps}\">Google Maps</a>"
 
 # ─── Курс валют ──────────────────────────────────────────────────────────────
+# Валюты стран поездки показываем как основу ("сколько это в тенге"), а не
+# наоборот — турист смотрит на ценник в местной валюте и хочет понять, сколько
+# это в его деньгах, а не пересчитывать от тенге в уме.
+
+CURRENCIES = {
+    "vnd": ("🇻🇳", "VND", "донг"),
+    "idr": ("🇮🇩", "IDR", "рупия"),
+    "sgd": ("🇸🇬", "SGD", "сингапурский доллар"),
+    "cny": ("🇨🇳", "CNY", "юань"),
+    "egp": ("🇪🇬", "EGP", "египетский фунт"),
+    "usd": ("🇺🇸", "USD", "доллар США"),
+    "eur": ("🇪🇺", "EUR", "евро"),
+}
+
+_rates_cache: dict = {"data": None, "ts": 0.0}
+RATES_CACHE_TTL_SEC = 600  # курс не меняется поминутно — не дёргаем API на каждое нажатие
+
+def _fetch_usd_rates() -> dict:
+    now = time.time()
+    if _rates_cache["data"] and (now - _rates_cache["ts"]) < RATES_CACHE_TTL_SEC:
+        return _rates_cache["data"]
+    with urllib.request.urlopen("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json", timeout=8) as r:
+        data = json.loads(r.read())["usd"]
+    _rates_cache["data"] = data
+    _rates_cache["ts"] = now
+    return data
 
 def get_rates() -> str:
     try:
-        with urllib.request.urlopen("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/usd.json", timeout=8) as r:
-            data = json.loads(r.read())["usd"]
+        data = _fetch_usd_rates()
         kzt = data.get("kzt", 0)
-        vnd = data.get("vnd", 0)
-        idr = data.get("idr", 0)
-        sgd = data.get("sgd", 0)
-        eur = data.get("eur", 0)
-        cny = data.get("cny", 0)
-        egp = data.get("egp", 0)
+        if not kzt:
+            raise ValueError("no kzt rate")
 
-        kzt_to_vnd = vnd / kzt * 1000 if kzt else 0
-        kzt_to_idr = idr / kzt * 1000 if kzt else 0
-        kzt_to_sgd = sgd / kzt * 1000 if kzt else 0
-        kzt_to_cny = cny / kzt * 1000 if kzt else 0
-        kzt_to_egp = egp / kzt * 1000 if kzt else 0
+        def to_kzt(code: str, units: int = 1) -> float:
+            rate = data.get(code, 0)
+            return (units / rate * kzt) if rate else 0
 
         return (
             "💱 <b>Курс валют</b>\n\n"
+            f"🇻🇳 10 000 VND = <b>{to_kzt('vnd', 10000):,.0f} KZT</b>\n"
+            f"🇮🇩 10 000 IDR = <b>{to_kzt('idr', 10000):,.0f} KZT</b>\n"
+            f"🇸🇬 1 SGD = <b>{to_kzt('sgd'):,.0f} KZT</b>\n"
+            f"🇨🇳 1 CNY = <b>{to_kzt('cny'):,.0f} KZT</b>\n"
+            f"🇪🇬 1 EGP = <b>{to_kzt('egp'):,.0f} KZT</b>\n\n"
             f"🇺🇸 1 USD = <b>{kzt:,.0f} KZT</b>\n"
-            f"🇪🇺 1 EUR = <b>{kzt/eur:,.0f} KZT</b>\n\n"
-            f"🇻🇳 1000 KZT = <b>{kzt_to_vnd:,.0f} VND</b>\n"
-            f"🇮🇩 1000 KZT = <b>{kzt_to_idr:,.0f} IDR</b>\n"
-            f"🇸🇬 1000 KZT = <b>{kzt_to_sgd:.2f} SGD</b>\n"
-            f"🇨🇳 1000 KZT = <b>{kzt_to_cny:.2f} CNY</b>\n"
-            f"🇪🇬 1000 KZT = <b>{kzt_to_egp:.2f} EGP</b>\n\n"
+            f"🇪🇺 1 EUR = <b>{to_kzt('eur'):,.0f} KZT</b>\n\n"
             f"<i>Данные: fawazahmed0 Currency API</i>"
         )
     except Exception as e:
         log.warning(f"Rates error: {e}")
         return "💱 Курс валют временно недоступен."
+
+def _parse_amount(text: str) -> float | None:
+    cleaned = text.strip().replace(" ", "").replace(" ", "").replace(",", ".")
+    try:
+        val = float(cleaned)
+        return val if val > 0 else None
+    except ValueError:
+        return None
+
+def convert_to_kzt(amount: float, code: str) -> float | None:
+    try:
+        data = _fetch_usd_rates()
+        kzt, rate = data.get("kzt", 0), data.get(code, 0)
+        return amount / rate * kzt if kzt and rate else None
+    except Exception as e:
+        log.warning(f"Convert error: {e}")
+        return None
 
 # ─── Хранилище ────────────────────────────────────────────────────────────────
 # На Cloud Run файловая система контейнера эфемерна — при каждом перезапуске
@@ -1700,6 +1737,26 @@ def hotel_area_filter_kb(areas: list[str]):
     rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
+def rates_kb():
+    return ReplyKeyboardMarkup(
+        [["🧮 Конвертер валют"], ["⬅️ Назад", "🏠 Главное меню"]],
+        resize_keyboard=True, is_persistent=True,
+    )
+
+CURRENCY_LABEL_TO_CODE = {f"{flag} {code}": key for key, (flag, code, _) in CURRENCIES.items()}
+
+def currency_picker_kb():
+    labels = list(CURRENCY_LABEL_TO_CODE.keys())
+    rows = [labels[i:i + 2] for i in range(0, len(labels), 2)]
+    rows.append(["⬅️ Назад", "🏠 Главное меню"])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
+
+def converter_amount_kb():
+    return ReplyKeyboardMarkup(
+        [["🔁 Сменить валюту"], ["⬅️ Назад", "🏠 Главное меню"]],
+        resize_keyboard=True, is_persistent=True,
+    )
+
 def poi_kb(offset: int, total: int):
     rows = []
     next_offset = offset + POI_PAGE_SIZE
@@ -1855,7 +1912,51 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if text == "💱 Курс валют":
-        await update.message.reply_text(get_rates(), parse_mode="HTML", reply_markup=main_kb())
+        await update.message.reply_text(get_rates(), parse_mode="HTML", reply_markup=rates_kb())
+        return
+
+    if text == "🧮 Конвертер валют":
+        set_state(chat_id, screen="converter_pick")
+        await update.message.reply_text(
+            "Выбери валюту, из которой считаем — переведу в тенге:",
+            reply_markup=currency_picker_kb(),
+        )
+        return
+
+    if state.get("screen") == "converter_pick" and text in CURRENCY_LABEL_TO_CODE:
+        code = CURRENCY_LABEL_TO_CODE[text]
+        flag, code_str, name = CURRENCIES[code]
+        set_state(chat_id, screen="converter_amount", converter_currency=code)
+        await update.message.reply_text(
+            f"{flag} Введи сумму в {code_str} ({name}) — посчитаю в тенге:",
+            reply_markup=converter_amount_kb(),
+        )
+        return
+
+    if text == "🔁 Сменить валюту" and state.get("screen") == "converter_amount":
+        set_state(chat_id, screen="converter_pick")
+        await update.message.reply_text("Выбери валюту, из которой считаем:", reply_markup=currency_picker_kb())
+        return
+
+    if (state.get("screen") == "converter_amount" and state.get("converter_currency")
+            and text not in ("⬅️ Назад", "🏠 Главное меню", "🔁 Сменить валюту")):
+        code = state["converter_currency"]
+        flag, code_str, name = CURRENCIES[code]
+        amount = _parse_amount(text)
+        if amount is None:
+            await update.message.reply_text(
+                f"Не понял сумму — введи просто число, например 500000",
+                reply_markup=converter_amount_kb(),
+            )
+            return
+        kzt_amount = await asyncio.to_thread(convert_to_kzt, amount, code)
+        if kzt_amount is None:
+            await update.message.reply_text("Курс временно недоступен, попробуй чуть позже.", reply_markup=converter_amount_kb())
+            return
+        await update.message.reply_text(
+            f"{flag} {amount:,.0f} {code_str} ≈ <b>{kzt_amount:,.0f} KZT</b>",
+            parse_mode="HTML", reply_markup=converter_amount_kb(),
+        )
         return
 
     if text == "🔔 Рассылка новостей":
