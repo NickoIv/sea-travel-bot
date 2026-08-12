@@ -1036,109 +1036,18 @@ def get_weather_one(name: str, lat: float, lon: float) -> str:
             log.warning(f"Weather source {source.__name__} failed for {name}: {e}")
     return f"🌡 {name}: нет данных"
 
-# ─── Отели (OpenStreetMap / Overpass API, без ключа) ──────────────────────────
-# У Agoda и Trip.com нет бесплатного публичного API — ссылки ведут на поиск
-# по названию отеля на их сайтах, а не на гарантированную страницу конкретного
-# объекта. Названия и адреса отелей — реальные, из OpenStreetMap. Фото — через
-# привязку к Wikidata (тег wikidata в OSM), если она у объекта есть.
+# ─── Отели (кураторские данные — см. CURATED) ──────────────────────────────────
+# Раньше список дополнялся живыми данными из OpenStreetMap/Overpass, но
+# публичные зеркала Overpass регулярно ложатся ВСЕ одновременно (проверено
+# не раз за эту сессию — 504/429/таймаут разом), и с телефона пользователя
+# это выглядело как "поиск не работает", пока бот 20-30 секунд перебирал
+# мёртвые зеркала. С появлением полноценного поиска по названию кураторские
+# данные (реальные, проверенные отели с фото/звёздами/районом) стали
+# единственным и достаточным источником — быстрым и надёжным всегда.
 
-OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
-]
-HOTEL_SEARCH_RADIUS_M = 8000
-HOTEL_POOL_SHOW = 15   # сколько отелей "раздаём" за один заход — с появлением
-# поиска по названию (search_hotels) длинный хвост случайных вариантов сверх
-# кураторского списка стал избыточен: искать конкретный отель теперь можно
-# напрямую, а не листать. Кураторские (обычно 9-10 на город) показываются
-# всегда первыми, тут только небольшой довесок для разнообразия.
-HOTEL_PAGE_SIZE = 10   # сколько показываем за раз — дальше "Ещё N" без похода в сеть
+HOTEL_PAGE_SIZE = 10  # сколько показываем за раз (кураторских на город обычно 9-10)
 
-# Небольшой резервный список реальных отелей на случай, если все зеркала
-# Overpass одновременно недоступны — чтобы раздел никогда не был пустым.
-FALLBACK_HOTELS = {
-    "vn": {
-        "hanoi": ["Sofitel Legend Metropole Hanoi", "Movenpick Hotel Hanoi", "La Siesta Premium Hang Be", "Peridot Grand Hotel"],
-        "da_nang": ["InterContinental Danang Sun Peninsula Resort", "Vinpearl Resort & Spa Da Nang", "Furama Resort Danang"],
-        "hoi_an": ["Anantara Hoi An Resort", "Almanity Hoi An Wellness Resort", "Hoi An Ancient House Village Resort"],
-        "nha_trang": ["Vinpearl Resort Nha Trang", "Amiana Resort Nha Trang", "InterContinental Nha Trang"],
-        "phu_quoc": ["JW Marriott Phu Quoc Emerald Bay", "Premier Residences Phu Quoc", "Salinda Resort Phu Quoc"],
-    },
-    "id": {
-        "denpasar": ["W Bali Seminyak", "Mulia Resort Nusa Dua", "Conrad Bali", "The Legian Bali"],
-        "ubud": ["Four Seasons Resort Bali at Sayan", "Komaneka at Bisma", "Mandapa a Ritz-Carlton Reserve"],
-        "lombok": ["The Oberoi Lombok", "Sheraton Senggigi Beach Resort"],
-    },
-    "sg": {
-        "singapore": ["Marina Bay Sands", "The Fullerton Hotel Singapore", "Raffles Singapore", "Capella Singapore"],
-    },
-    "eg": {
-        "cairo": ["Four Seasons Hotel Cairo at Nile Plaza", "Kempinski Nile Hotel Cairo", "Sofitel Cairo Nile El Gezirah"],
-        "hurghada": ["Steigenberger Al Dau Beach Hotel", "Baron Palace Sahl Hasheesh", "Sunrise Grand Select Crystal Bay"],
-        "sharm": ["Rixos Sharm El Sheikh", "Four Seasons Resort Sharm El Sheikh", "Baron Resort Sharm El Sheikh"],
-        "luxor": ["Sofitel Winter Palace Luxor", "Steigenberger Nile Palace Luxor", "Hilton Luxor Resort & Spa"],
-    },
-    "cn": {
-        "hainan": ["Mandarin Oriental Sanya", "The Ritz-Carlton Sanya, Yalong Bay", "Sheraton Sanya Resort", "Sanya Marriott Hotel Dadonghai Bay"],
-    },
-}
-
-# Кэш кандидатов на процесс: Overpass дёргаем один раз на город, а не при
-# каждом нажатии — дальше берём новую случайную тридцатку из уже полученного
-# пула (мгновенно, без обращения к сети).
-_city_hotel_cache: dict[tuple, list] = {}
-# Текущая "выданная" тридцатка на город — нужна, чтобы "Ещё 10" продолжала
-# именно тот же набор, а не мешала его заново на каждой странице.
 _shown_hotels_cache: dict[tuple, list] = {}
-
-def _fetch_osm_hotels(lat: float, lon: float) -> list[dict]:
-    query = f"""
-[out:json][timeout:20];
-(
-  node["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
-  way["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
-);
-out center tags;
-"""
-    def _try(endpoint):
-        resp = requests.get(
-            endpoint, params={"data": query},
-            headers={"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder)"},
-            timeout=15,
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    # Опрашиваем все зеркала параллельно и берём первый успешный ответ —
-    # публичные зеркала Overpass нестабильны, по очереди можно ждать до
-    # минуты, если они все одновременно перегружены.
-    with ThreadPoolExecutor(max_workers=len(OVERPASS_ENDPOINTS)) as pool:
-        futures = {pool.submit(_try, ep): ep for ep in OVERPASS_ENDPOINTS}
-        try:
-            for future in as_completed(futures, timeout=16):
-                endpoint = futures[future]
-                try:
-                    data = future.result()
-                except Exception as e:
-                    log.warning(f"Overpass {endpoint} failed: {e}")
-                    continue
-                hotels = []
-                for el in data.get("elements", []):
-                    tags = el.get("tags", {})
-                    name = tags.get("name")
-                    if not name:
-                        continue
-                    hotels.append({
-                        "name": name[:70], "stars": tags.get("stars"),
-                        "wikidata": tags.get("wikidata"), "tag_count": len(tags),
-                        "osm_type": tags.get("tourism", ""),
-                    })
-                if hotels:
-                    return hotels
-        except Exception as e:
-            log.warning(f"Overpass mirrors all timed out: {e}")
-    return []
 
 def _hotel_rank(h: dict):
     """Сортировка 'от высокой оценки к низкой': у OSM нет пользовательских
@@ -1152,61 +1061,30 @@ def _hotel_rank(h: dict):
     return (stars_val, h.get("tag_count", 0))
 
 def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
-    """Показываем только кураторские отели (реальные, проверенные — см.
-    CURATED). Раньше сюда ещё подмешивался случайный довесок из Overpass,
-    но с появлением поиска по названию (search_hotels/inline) листать
-    длинный хвост произвольных вариантов стало незачем — конкретный отель
-    теперь находится напрямую. Overpass для города при этом не запрашиваем
-    здесь синхронно (это было бы задержкой ради данных, которые тут больше
-    не показываются) — его подтягивает и кэширует сам поиск при первом
-    обращении."""
+    """Кураторский список отелей города — реальные, проверенные (см.
+    CURATED), без обращения к сети."""
     city = find_city(country_code, city_key)
     if not city:
         return []
     cache_key = (country_code, city_key)
     curated_raw = CURATED.get((country_code, city_key), {}).get("hotels", [])
-    curated = [_curated_hotel_to_item(h) for h in curated_raw]
-
-    if curated:
-        chosen = sorted(curated, key=_hotel_rank, reverse=True)
-    else:
-        # Города без кураторских данных сейчас нет, но на всякий случай —
-        # не оставляем экран пустым.
-        pool = _city_hotel_cache.get(cache_key) or _fetch_osm_hotels(city["lat"], city["lon"])
-        if pool:
-            _city_hotel_cache[cache_key] = pool
-        else:
-            fallback_names = FALLBACK_HOTELS.get(country_code, {}).get(city_key, [])
-            pool = [{"name": n, "stars": None, "wikidata": None, "tag_count": 0} for n in fallback_names]
-        chosen = sorted(pool[:HOTEL_POOL_SHOW], key=_hotel_rank, reverse=True)
-
+    chosen = sorted((_curated_hotel_to_item(h) for h in curated_raw), key=_hotel_rank, reverse=True)
     _shown_hotels_cache[cache_key] = chosen
     return chosen
 
 HOTEL_SEARCH_RESULTS_MAX = 15
 
 def search_hotels(country_code: str, city_key: str, query: str) -> list[dict]:
-    """Ищет по названию среди кураторских отелей и всего пула Overpass для
-    города — при первом поиске по городу подтягивает и кэширует его (список
-    отелей больше не показывает эти данные сам по себе, поиск — единственное
-    место, где они нужны, поэтому запрашивает их по требованию)."""
+    """Ищет по названию среди кураторских отелей города — мгновенно, без
+    обращения к сети."""
     q = query.strip().lower()
     if not q:
         return []
     curated_raw = CURATED.get((country_code, city_key), {}).get("hotels", [])
-    curated = [_curated_hotel_to_item(h) for h in curated_raw]
-    cache_key = (country_code, city_key)
-    pool = _city_hotel_cache.get(cache_key)
-    if pool is None:
-        city = find_city(country_code, city_key)
-        pool = _fetch_osm_hotels(city["lat"], city["lon"]) if city else []
-        _city_hotel_cache[cache_key] = pool
-    seen, results = set(), []
-    for h in curated + pool:
-        name_lower = h["name"].lower()
-        if q in name_lower and name_lower not in seen:
-            seen.add(name_lower)
-            results.append(h)
+    results = [
+        _curated_hotel_to_item(h) for h in curated_raw
+        if q in h["name"].lower()
+    ]
     results.sort(key=_hotel_rank, reverse=True)
     return results[:HOTEL_SEARCH_RESULTS_MAX]
 
@@ -1295,39 +1173,26 @@ def _stars_str(stars) -> str:
 def fmt_hotels_header(city: dict, country_name: str, count: int, filtered: bool = False) -> str:
     header = f"{city['icon']} <b>Отели — {city['name']}</b> ({country_name})"
     if count:
-        header += f"\n<i>{count} вариантов, от высокой оценки к низкой — жми «Показать другие» для новой подборки</i>"
+        header += f"\n<i>{count} вариантов, от высокой оценки к низкой</i>"
     elif filtered:
         header += "\n\n😕 По этому фильтру ничего не нашлось — попробуй другой или сбрось фильтр."
     else:
         header += "\n\n😕 Не удалось получить список отелей. Попробуй ещё раз чуть позже."
     return header
 
-HOTEL_TYPE_LABELS = {
-    "hotel": "Отель", "guest_house": "Гостевой дом", "hostel": "Хостел",
-    "motel": "Мотель", "apartment": "Апартаменты", "resort": "Курортный отель",
-}
-
 def fmt_hotel_line(i: int, h: dict, city_en: str) -> str:
     name = html.escape(h["name"])
     stars = _stars_str(h.get("stars"))
     area = h.get("area")
     area_str = f" · 📍{html.escape(area)}" if area else ""
-    # У кураторских отелей уже есть звёзды/район в основной строке; у
-    # "довесочных" из OSM их обычно нет — тогда показываем хотя бы тип
-    # объекта, чтобы название не висело совсем без контекста.
-    type_line = ""
-    if not stars and not area:
-        type_label = HOTEL_TYPE_LABELS.get(h.get("osm_type", ""))
-        if type_label:
-            type_line = f"\n    <i>{type_label}</i>"
     q = urllib.parse.quote(f"{h['name']} {city_en}")
     # Agoda/Trip.com не открывали конкретный отель (нет бесплатного текстового
     # поиска) — Booking.com показывает отфильтрованный список по запросу,
     # Google Maps почти всегда попадает точно в объект и показывает реальные
-    # рейтинг и отзывы гостей (в отличие от звёздности из OSM).
+    # рейтинг и отзывы гостей.
     booking = f"https://www.booking.com/searchresults.html?ss={q}"
     gmaps = f"https://www.google.com/maps/search/?api=1&query={q}"
-    return (f"{i}. <b>{name}</b>{stars}{area_str}{type_line}\n"
+    return (f"{i}. <b>{name}</b>{stars}{area_str}\n"
             f"    <a href=\"{booking}\">Booking.com</a> · <a href=\"{gmaps}\">Google Maps (отзывы)</a>")
 
 # ─── Фото города (гарантированный визуал) ──────────────────────────────────────
@@ -1371,12 +1236,20 @@ def get_city_photo(city: dict) -> bytes | None:
         _city_photo_cache[key] = _download_commons_file(title) if title else None
     return _city_photo_cache[key]
 
-# ─── Достопримечательности и кафе (тот же принцип, что и у отелей) ─────────────
+# ─── Достопримечательности и кафе (OpenStreetMap / Overpass API, без ключа) ────
 # Скраппинг Trip.com не используем: сайт защищён от автоматического сбора
 # и требует рендеринга JS, а прямые поисковые ссылки на Trip.com уже не
 # сработали для отелей (замена на Google Maps). Здесь та же логика: реальные
 # места — из OpenStreetMap через Overpass (бесплатно, без ключа), ссылка —
-# на Google Maps с настоящими рейтингом и отзывами.
+# на Google Maps с настоящими рейтингом и отзывами. В отличие от отелей,
+# полностью отказаться от Overpass тут нельзя — курировать вручную кафе и
+# достопримечательности для 14 городов кратно объёмнее, чем отели.
+
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
 
 POI_KINDS = {
     "attractions": {
@@ -1929,7 +1802,6 @@ def hotels_kb(offset: int, total: int, filtered: bool = False):
     rows.append(["🔍 Поиск отеля"])
     if filtered:
         rows.append(["♻️ Сбросить фильтр"])
-    rows.append(["🔀 Показать другие 30"])
     rows.append(["⬅️ Назад", "🏠 Главное меню"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, is_persistent=True)
 
@@ -2294,11 +2166,17 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if text == "🏨 Отели" and state.get("country") and state.get("city"):
         code, city_key = state["country"], state["city"]
         city = find_city(code, city_key)
-        if not _city_hotel_cache.get((code, city_key)):
-            await update.message.reply_text(f"⏳ Ищу отели — {city['name']}...")
+        # Кураторские данные всегда под рукой без похода в сеть — сразу ведём
+        # в меню поиска/фильтров, а не вываливаем список: с поиском по
+        # названию и фильтрами по звёздам/району отдельный экран-каталог
+        # больше не нужен.
         hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
         set_state(chat_id, screen="hotels", hotel_offset=0, hotel_filter=None)
-        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
+        country_name = COUNTRIES.get(code, ("", ""))[1]
+        await update.message.reply_text(
+            fmt_hotels_header(city, country_name, len(hotels)),
+            parse_mode="HTML", reply_markup=hotels_kb(0, len(hotels)),
+        )
         return
 
     if text.startswith("▶️ Ещё") and state.get("screen") == "hotels":
@@ -2308,16 +2186,6 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         offset = state.get("hotel_offset", 0) + HOTEL_PAGE_SIZE
         set_state(chat_id, hotel_offset=offset)
         await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, offset, filtered=bool(state.get("hotel_filter")))
-        return
-
-    if text == "🔀 Показать другие 30" and state.get("screen") == "hotels":
-        code, city_key = state.get("country"), state.get("city")
-        city = find_city(code, city_key)
-        if not _city_hotel_cache.get((code, city_key)):
-            await update.message.reply_text(f"⏳ Ищу отели — {city['name']}...")
-        hotels = await asyncio.to_thread(shuffle_city_hotels, code, city_key)
-        set_state(chat_id, hotel_offset=0, hotel_filter=None)
-        await send_hotels_page(ctx, chat_id, code, city_key, city, hotels, 0)
         return
 
     if text == "🔍 Поиск отеля" and state.get("screen") == "hotels":
@@ -2529,8 +2397,7 @@ async def inline_hotel_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for code, cities in CITIES.items():
             for c in cities:
                 curated_raw = CURATED.get((code, c["key"]), {}).get("hotels", [])
-                pool = _city_hotel_cache.get((code, c["key"])) or []
-                for h in [_curated_hotel_to_item(x) for x in curated_raw] + pool:
+                for h in (_curated_hotel_to_item(x) for x in curated_raw):
                     name_lower = h["name"].lower()
                     if q in name_lower and name_lower not in seen:
                         seen.add(name_lower)
@@ -2538,7 +2405,7 @@ async def inline_hotel_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         matches.sort(key=lambda m: _hotel_rank(m[0]), reverse=True)
         return matches[:INLINE_SEARCH_LIMIT]
 
-    matches = await asyncio.to_thread(_search_all_cities)
+    matches = _search_all_cities()
 
     results = []
     for h, code, c in matches:
