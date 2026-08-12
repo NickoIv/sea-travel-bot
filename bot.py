@@ -1073,18 +1073,83 @@ def shuffle_city_hotels(country_code: str, city_key: str) -> list[dict]:
     return chosen
 
 HOTEL_SEARCH_RESULTS_MAX = 15
+HOTEL_SEARCH_RADIUS_M = 8000
+# Поиск должен уметь находить ЛЮБОЙ отель, не только кураторский шорт-лист —
+# но ждать десятки секунд мёртвые зеркала Overpass (как было раньше) с
+# телефона выглядит как поломка. Бюджет здесь сильно короче, чем у
+# POI/погоды: если сеть недоступна, поиск быстро сдаётся и отдаёт то, что
+# нашлось в кураторских данных, вместо долгого зависания.
+HOTEL_OVERPASS_TIMEOUT_S = 5
+
+_city_hotel_cache: dict[tuple, list] = {}
+
+def _fetch_osm_hotels_quick(lat: float, lon: float) -> list[dict]:
+    query = f"""
+[out:json][timeout:{HOTEL_OVERPASS_TIMEOUT_S}];
+(
+  node["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
+  way["tourism"~"^(hotel|guest_house|hostel|motel|apartment|resort)$"](around:{HOTEL_SEARCH_RADIUS_M},{lat},{lon});
+);
+out center tags;
+"""
+    def _try(endpoint):
+        resp = requests.get(
+            endpoint, params={"data": query},
+            headers={"User-Agent": "sea-travel-bot/1.0 (Telegram hotel finder)"},
+            timeout=HOTEL_OVERPASS_TIMEOUT_S - 1,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    with ThreadPoolExecutor(max_workers=len(OVERPASS_ENDPOINTS)) as pool:
+        futures = {pool.submit(_try, ep): ep for ep in OVERPASS_ENDPOINTS}
+        try:
+            for future in as_completed(futures, timeout=HOTEL_OVERPASS_TIMEOUT_S):
+                endpoint = futures[future]
+                try:
+                    data = future.result()
+                except Exception as e:
+                    log.warning(f"Overpass {endpoint} failed (hotel search): {e}")
+                    continue
+                hotels = []
+                for el in data.get("elements", []):
+                    tags = el.get("tags", {})
+                    name = tags.get("name")
+                    if not name:
+                        continue
+                    hotels.append({"name": name[:70], "stars": tags.get("stars"), "tag_count": len(tags)})
+                if hotels:
+                    return hotels
+        except Exception as e:
+            log.warning(f"Overpass mirrors all timed out (hotel search): {e}")
+    return []
 
 def search_hotels(country_code: str, city_key: str, query: str) -> list[dict]:
-    """Ищет по названию среди кураторских отелей города — мгновенно, без
-    обращения к сети."""
+    """Ищет сначала среди кураторских отелей (мгновенно), затем добавляет
+    более широкий пул из OpenStreetMap с коротким сетевым бюджетом — так
+    находится и то, чего нет в шорт-листе, но поиск не зависает надолго,
+    если Overpass недоступен."""
     q = query.strip().lower()
     if not q:
         return []
     curated_raw = CURATED.get((country_code, city_key), {}).get("hotels", [])
-    results = [
-        _curated_hotel_to_item(h) for h in curated_raw
-        if q in h["name"].lower()
-    ]
+    curated = [_curated_hotel_to_item(h) for h in curated_raw]
+    curated_names = {c["name"].lower() for c in curated}
+
+    cache_key = (country_code, city_key)
+    pool = _city_hotel_cache.get(cache_key)
+    if not pool:
+        city = find_city(country_code, city_key)
+        pool = _fetch_osm_hotels_quick(city["lat"], city["lon"]) if city else []
+        if pool:
+            _city_hotel_cache[cache_key] = pool
+
+    seen, results = set(), []
+    for h in curated + [p for p in pool if p["name"].lower() not in curated_names]:
+        name_lower = h["name"].lower()
+        if q in name_lower and name_lower not in seen:
+            seen.add(name_lower)
+            results.append(h)
     results.sort(key=_hotel_rank, reverse=True)
     return results[:HOTEL_SEARCH_RESULTS_MAX]
 
@@ -2201,6 +2266,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         code, city_key = state.get("country"), state.get("city")
         city = find_city(code, city_key)
         city_en = city.get("en", city["name"])
+        if not _city_hotel_cache.get((code, city_key)):
+            await update.message.reply_text("⏳ Ищу...")
         results = await asyncio.to_thread(search_hotels, code, city_key, text)
         if results:
             await asyncio.to_thread(_translate_page_names, results)
@@ -2393,11 +2460,15 @@ async def inline_hotel_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = query.lower()
 
     def _search_all_cities():
+        # Только то, что уже закэшировано ранее обычным поиском в чате —
+        # никаких новых сетевых запросов здесь: у inline-режима свой,
+        # значительно более короткий бюджет времени на ответ в Telegram.
         seen, matches = set(), []
         for code, cities in CITIES.items():
             for c in cities:
                 curated_raw = CURATED.get((code, c["key"]), {}).get("hotels", [])
-                for h in (_curated_hotel_to_item(x) for x in curated_raw):
+                cached_pool = _city_hotel_cache.get((code, c["key"])) or []
+                for h in [_curated_hotel_to_item(x) for x in curated_raw] + cached_pool:
                     name_lower = h["name"].lower()
                     if q in name_lower and name_lower not in seen:
                         seen.add(name_lower)
